@@ -1,0 +1,372 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import {
+  loadProject,
+  loadPrompts,
+  upsertDraft,
+  withStyleRules,
+} from "@/lib/storage";
+import type { Chapter, Project, Section, SectionDraft } from "@/lib/types";
+import { exportProjectDocx, exportSectionDocx } from "@/lib/docx";
+
+type Selected = { chapter: Chapter; section: Section } | null;
+
+export default function WriterPage() {
+  const [project, setProject] = useState<Project | null>(null);
+  const [selected, setSelected] = useState<Selected>(null);
+  const [loading, setLoading] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const p = loadProject();
+    setProject(p);
+    if (p.selectedOutline?.chapters.length) {
+      const firstChapter = p.selectedOutline.chapters[0];
+      const firstSection = firstChapter.sections?.[0];
+      if (firstSection) setSelected({ chapter: firstChapter, section: firstSection });
+    }
+  }, []);
+
+  const draftMap = useMemo(() => {
+    const m = new Map<string, SectionDraft>();
+    project?.generatedSections.forEach((d) => m.set(`${d.chapterId}::${d.sectionId}`, d));
+    return m;
+  }, [project]);
+
+  const currentDraft: SectionDraft | undefined = useMemo(() => {
+    if (!selected) return undefined;
+    return draftMap.get(`${selected.chapter.id}::${selected.section.id}`);
+  }, [selected, draftMap]);
+
+  if (!project) {
+    return (
+      <>
+        <div className="page-header">
+          <div>
+            <h1>原稿生成</h1>
+            <p className="subtitle">選択した構成案をもとに、小見出し単位で本文を生成します。</p>
+          </div>
+        </div>
+        <div className="empty-state">読み込み中…</div>
+      </>
+    );
+  }
+
+  if (!project.selectedOutline) {
+    return (
+      <>
+        <div className="page-header">
+          <div>
+            <h1>原稿生成</h1>
+            <p className="subtitle">構成案がまだ選ばれていません。</p>
+          </div>
+        </div>
+        <div className="empty-state">
+          先に構成案画面で1案を選択してください。
+          <div style={{ marginTop: 12 }}>
+            <Link className="btn primary" href="/outline">構成案画面へ</Link>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  async function handleGenerate(force = false) {
+    if (!project || !selected) return;
+    const key = `${selected.chapter.id}::${selected.section.id}`;
+    if (!force && draftMap.has(key)) {
+      // すでに生成済み: 再生成は force=true のとき
+    }
+    setError(null);
+    setLoading(true);
+    try {
+      const prompts = loadPrompts();
+      const base = prompts.find((p) => p.id === "prompt-draft");
+      const promptTemplate = base ? withStyleRules(base) : undefined;
+      const res = await fetch("/api/generate-draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project,
+          chapter: selected.chapter,
+          section: selected.section,
+          promptTemplate,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "本文生成に失敗しました。");
+      const draft: SectionDraft | undefined = data?.draft;
+      if (!draft) {
+        throw new Error("AIから本文が返りませんでした。");
+      }
+      const next = upsertDraft(draft);
+      setProject(next);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleReview() {
+    if (!project || !currentDraft) return;
+    setError(null);
+    setReviewing(true);
+    try {
+      const prompts = loadPrompts();
+      const base = prompts.find((p) => p.id === "prompt-review");
+      const promptTemplate = base ? withStyleRules(base) : undefined;
+      const res = await fetch("/api/review-draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          draft: currentDraft,
+          writingMemory: project.writingMemory,
+          promptTemplate,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "編集レビューに失敗しました。");
+      const merged: SectionDraft = {
+        ...currentDraft,
+        editorNotes: [...currentDraft.editorNotes, ...(data?.editorNotes ?? [])],
+        followUpQuestions: [...currentDraft.followUpQuestions, ...(data?.followUpQuestions ?? [])],
+        factCheckPoints: [...currentDraft.factCheckPoints, ...(data?.factCheckPoints ?? [])],
+        continuityNotes: [
+          ...currentDraft.continuityNotes,
+          ...((data?.revisionSuggestions ?? []) as string[]).map((s) => `[修正案] ${s}`),
+        ],
+        updatedAt: new Date().toISOString(),
+      };
+      const next = upsertDraft(merged);
+      setProject(next);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setReviewing(false);
+    }
+  }
+
+  async function handleExportSection() {
+    if (!project || !currentDraft) return;
+    setExporting(true);
+    try {
+      await exportSectionDocx(project, currentDraft);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function handleExportAll() {
+    if (!project) return;
+    if (project.generatedSections.length === 0) {
+      setError("Word出力対象の本文がありません。先に本文を生成してください。");
+      return;
+    }
+    setExporting(true);
+    try {
+      await exportProjectDocx(project);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  const outline = project.selectedOutline;
+
+  return (
+    <>
+      <div className="page-header">
+        <div>
+          <h1>原稿生成</h1>
+          <p className="subtitle">
+            構成：<strong>{outline.title}</strong>　／
+            生成済み {project.generatedSections.length} / {outline.chapters.reduce((a, c) => a + c.sections.length, 0)} 節
+          </p>
+        </div>
+        <div className="actions">
+          <button className="btn" onClick={handleExportAll} disabled={exporting} type="button">
+            {exporting ? <span className="spinner" /> : null}
+            全体Wordを出力
+          </button>
+        </div>
+      </div>
+
+      {error ? <div className="alert" style={{ marginBottom: 16 }}>{error}</div> : null}
+
+      <div className="writer-shell">
+        <aside className="panel">
+          <div className="panel-header">
+            <h2>章・小見出し</h2>
+            <span className="hint">クリックで切替</span>
+          </div>
+          <div className="panel-body dense">
+            <ul className="toc">
+              {outline.chapters.map((c) => (
+                <li key={c.id} className="chapter">
+                  <div className="chapter-title">
+                    第{c.chapterNumber}章　{c.title}
+                  </div>
+                  <ul className="section-list">
+                    {(c.sections ?? []).length === 0 ? (
+                      <li className="muted" style={{ padding: 8, fontSize: 12 }}>
+                        小見出しがまだ生成されていません。
+                      </li>
+                    ) : null}
+                    {(c.sections ?? []).map((s) => {
+                      const k = `${c.id}::${s.id}`;
+                      const hasDraft = draftMap.has(k);
+                      const isActive = selected?.chapter.id === c.id && selected?.section.id === s.id;
+                      return (
+                        <li
+                          key={s.id}
+                          className={`section ${isActive ? "active" : ""} ${hasDraft ? "has-draft" : ""}`}
+                          onClick={() => setSelected({ chapter: c, section: s })}
+                        >
+                          <span className="dot" />
+                          <span>{s.title}</span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </aside>
+
+        <section>
+          {!selected ? (
+            <div className="empty-state">左の一覧から小見出しを選んでください。</div>
+          ) : (
+            <>
+              <div className="panel">
+                <div className="panel-header">
+                  <div>
+                    <div className="muted" style={{ fontSize: 11 }}>
+                      第{selected.chapter.chapterNumber}章　{selected.chapter.title}
+                    </div>
+                    <h2 style={{ fontSize: 15, marginTop: 2 }}>{selected.section.title}</h2>
+                  </div>
+                  <div className="row-actions">
+                    {currentDraft ? (
+                      <button
+                        className="btn"
+                        onClick={() => handleGenerate(true)}
+                        disabled={loading}
+                        type="button"
+                      >
+                        {loading ? <span className="spinner" /> : null}
+                        本文を再生成
+                      </button>
+                    ) : (
+                      <button
+                        className="btn primary"
+                        onClick={() => handleGenerate(false)}
+                        disabled={loading}
+                        type="button"
+                      >
+                        {loading ? <span className="spinner" /> : null}
+                        {loading ? "生成中…" : "この小見出しの本文を生成"}
+                      </button>
+                    )}
+                    <button
+                      className="btn"
+                      onClick={handleReview}
+                      disabled={!currentDraft || reviewing}
+                      type="button"
+                    >
+                      {reviewing ? <span className="spinner" /> : null}
+                      編集レビューを追加
+                    </button>
+                    <button
+                      className="btn"
+                      onClick={handleExportSection}
+                      disabled={!currentDraft || exporting}
+                      type="button"
+                    >
+                      Wordで保存
+                    </button>
+                  </div>
+                </div>
+                <div className="panel-body">
+                  {!currentDraft ? (
+                    <div className="empty-state">
+                      まだ本文が生成されていません。「この小見出しの本文を生成」を押してください。
+                    </div>
+                  ) : (
+                    <div className="draft-body">{currentDraft.body || "（本文が空です）"}</div>
+                  )}
+                </div>
+              </div>
+
+              {currentDraft ? (
+                <div className="grid grid-2">
+                  <div className="panel">
+                    <div className="panel-header">
+                      <h2>編集メモ</h2>
+                      <span className="hint">{currentDraft.editorNotes.length} 件</span>
+                    </div>
+                    <ul className="list-block">
+                      {currentDraft.editorNotes.length === 0 ? (
+                        <li className="muted">編集メモはありません。</li>
+                      ) : (
+                        currentDraft.editorNotes.map((n, i) => <li key={i}>{n}</li>)
+                      )}
+                    </ul>
+                  </div>
+                  <div className="panel">
+                    <div className="panel-header">
+                      <h2>追加質問</h2>
+                      <span className="hint">{currentDraft.followUpQuestions.length} 件</span>
+                    </div>
+                    <ul className="list-block">
+                      {currentDraft.followUpQuestions.length === 0 ? (
+                        <li className="muted">追加質問はありません。</li>
+                      ) : (
+                        currentDraft.followUpQuestions.map((q, i) => <li key={i}>{q}</li>)
+                      )}
+                    </ul>
+                  </div>
+                  <div className="panel">
+                    <div className="panel-header">
+                      <h2>事実確認ポイント</h2>
+                      <span className="hint">{currentDraft.factCheckPoints.length} 件</span>
+                    </div>
+                    <ul className="list-block">
+                      {currentDraft.factCheckPoints.length === 0 ? (
+                        <li className="muted">事実確認ポイントはありません。</li>
+                      ) : (
+                        currentDraft.factCheckPoints.map((q, i) => <li key={i}>{q}</li>)
+                      )}
+                    </ul>
+                  </div>
+                  <div className="panel">
+                    <div className="panel-header">
+                      <h2>前後のつながりメモ</h2>
+                      <span className="hint">{currentDraft.continuityNotes.length} 件</span>
+                    </div>
+                    <ul className="list-block">
+                      {currentDraft.continuityNotes.length === 0 ? (
+                        <li className="muted">つながりメモはありません。</li>
+                      ) : (
+                        currentDraft.continuityNotes.map((q, i) => <li key={i}>{q}</li>)
+                      )}
+                    </ul>
+                  </div>
+                </div>
+              ) : null}
+            </>
+          )}
+        </section>
+      </div>
+    </>
+  );
+}

@@ -1,0 +1,230 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  loadProject,
+  loadPrompts,
+  saveProject,
+  setOutlineProposals,
+  resetProject,
+} from "@/lib/storage";
+import type { OutlineProposal, Project } from "@/lib/types";
+
+export default function InterviewNotesPage() {
+  const router = useRouter();
+  const [project, setProject] = useState<Project | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+
+  useEffect(() => {
+    setProject(loadProject());
+  }, []);
+
+  const charCount = useMemo(() => project?.interviewNotes.length ?? 0, [project]);
+
+  if (!project) {
+    return (
+      <>
+        <div className="page-header">
+          <div>
+            <h1>取材メモ入力</h1>
+            <p className="subtitle">取材で聞いた内容を貼り付け、章立て案を生成します。</p>
+          </div>
+        </div>
+        <div className="empty-state">読み込み中…</div>
+      </>
+    );
+  }
+
+  function updateField<K extends keyof Project>(key: K, value: Project[K]) {
+    setProject((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, [key]: value };
+      saveProject(next);
+      return next;
+    });
+  }
+
+  async function handleGenerateOutline() {
+    if (!project) return;
+    if (!project.interviewNotes.trim()) {
+      setError("取材メモを入力してください。");
+      return;
+    }
+    setError(null);
+    setInfo(null);
+    setLoading(true);
+    try {
+      const prompts = loadPrompts();
+      const promptTemplate = prompts.find((p) => p.id === "prompt-outline");
+      const res = await fetch("/api/generate-outline", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectName: project.name,
+          intervieweeName: project.intervieweeName,
+          theme: project.theme,
+          targetReader: project.targetReader,
+          desiredTone: project.desiredTone,
+          interviewNotes: project.interviewNotes,
+          promptTemplate,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || "構成案の生成に失敗しました。");
+      }
+      const proposals: OutlineProposal[] = Array.isArray(data?.proposals) ? data.proposals : [];
+      if (proposals.length === 0) {
+        setError("AIが構成案を返しませんでした。プロンプトや入力内容を確認してください。");
+        return;
+      }
+      const next = setOutlineProposals(proposals);
+      setProject(next);
+      router.push("/outline");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(`AI生成に失敗しました。${msg}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleReset() {
+    if (!confirm("プロジェクトを初期状態に戻します。よろしいですか？")) return;
+    const fresh = resetProject();
+    setProject(fresh);
+    setInfo("初期状態に戻しました。");
+  }
+
+  return (
+    <>
+      <div className="page-header">
+        <div>
+          <h1>取材メモ入力</h1>
+          <p className="subtitle">
+            取材で聞いた内容を貼り付け、章立て案を3パターン生成します。
+          </p>
+        </div>
+        <div className="actions">
+          <button className="btn ghost" onClick={handleReset} type="button">
+            初期状態に戻す
+          </button>
+          <button
+            className="btn primary lg"
+            onClick={handleGenerateOutline}
+            disabled={loading}
+            type="button"
+          >
+            {loading ? <span className="spinner" /> : null}
+            {loading ? "構成案を生成中…" : "章立て案を生成する"}
+          </button>
+        </div>
+      </div>
+
+      {error ? <div className="alert" style={{ marginBottom: 16 }}>{error}</div> : null}
+      {info ? <div className="alert info" style={{ marginBottom: 16 }}>{info}</div> : null}
+
+      <div className="panel">
+        <div className="panel-header">
+          <h2>プロジェクト基本情報</h2>
+          <span className="hint">localStorageに自動保存されます</span>
+        </div>
+        <div className="panel-body">
+          <div className="field-row">
+            <div className="field">
+              <label htmlFor="proj-name">プロジェクト名</label>
+              <input
+                id="proj-name"
+                type="text"
+                className="input"
+                value={project.name}
+                onChange={(e) => updateField("name", e.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="proj-interviewee">取材対象者名</label>
+              <input
+                id="proj-interviewee"
+                type="text"
+                className="input"
+                value={project.intervieweeName}
+                onChange={(e) => updateField("intervieweeName", e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="field-row">
+            <div className="field">
+              <label htmlFor="proj-theme">本にしたいテーマ</label>
+              <input
+                id="proj-theme"
+                type="text"
+                className="input"
+                value={project.theme}
+                onChange={(e) => updateField("theme", e.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="proj-reader">想定読者</label>
+              <input
+                id="proj-reader"
+                type="text"
+                className="input"
+                value={project.targetReader}
+                onChange={(e) => updateField("targetReader", e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="field">
+            <label htmlFor="proj-tone">文体の希望</label>
+            <input
+              id="proj-tone"
+              type="text"
+              className="input"
+              value={project.desiredTone}
+              onChange={(e) => updateField("desiredTone", e.target.value)}
+              placeholder="例：落ち着いた人物伝風。誠実で読みやすい語り口。"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-header">
+          <h2>取材メモ</h2>
+          <span className="hint">{charCount.toLocaleString()} 文字</span>
+        </div>
+        <div className="panel-body">
+          <div className="field" style={{ marginBottom: 4 }}>
+            <textarea
+              className="input mono"
+              rows={18}
+              value={project.interviewNotes}
+              onChange={(e) => updateField("interviewNotes", e.target.value)}
+              placeholder="取材で聞き取った内容を、箇条書き／自由記述どちらでも貼り付けてください。"
+            />
+            <p className="help">
+              事実関係のみで構いません。整形・要約はAIが行います。
+              個人を特定する情報は事前にマスキングしてください。
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-header">
+          <h2>次のステップ</h2>
+        </div>
+        <div className="panel-body dense">
+          <ol style={{ margin: 0, paddingLeft: 20, color: "var(--text-soft)", fontSize: 12 }}>
+            <li>「章立て案を生成する」を押すと、時系列型／テーマ型／人物伝型の3案を提示します。</li>
+            <li>構成案画面で1案を選択すると、章ごとに小見出しが自動生成されます。</li>
+            <li>原稿生成画面で小見出しをクリックすると、本文と編集メモがAIから返ります。</li>
+          </ol>
+        </div>
+      </div>
+    </>
+  );
+}
