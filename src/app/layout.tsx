@@ -2,6 +2,7 @@ import "./globals.css";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { Nav } from "@/components/Nav";
+import { ProjectSwitcher } from "@/components/ProjectSwitcher";
 
 export const metadata: Metadata = {
   title: "聞き書き出版AI（デモ）",
@@ -18,6 +19,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               <span>聞き書き出版AI</span>
               <span className="tag">DEMO</span>
             </div>
+            <ProjectSwitcher />
             <div className="right">編集者向け 業務デモ</div>
           </header>
           <Nav />

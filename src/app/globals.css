@@ -105,6 +105,122 @@ textarea {
   color: rgba(255, 255, 255, 0.78);
 }
 
+/* ===== Project Switcher ===== */
+.project-switcher {
+  position: relative;
+  margin-left: 16px;
+}
+.project-switcher-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  padding: 0 10px;
+  height: 28px;
+  border-radius: 3px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 120ms;
+}
+.project-switcher-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+.project-switcher-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.project-switcher-btn .label {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.6);
+  text-transform: uppercase;
+}
+.project-switcher-btn .name {
+  font-weight: 500;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-switcher-btn .caret {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.project-switcher-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 300px;
+  max-width: 360px;
+  background: #fff;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15), 0 2px 6px rgba(0, 0, 0, 0.08);
+  padding: 4px 0;
+  z-index: 1000;
+}
+.project-switcher-menu .menu-section-label {
+  padding: 8px 12px 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.project-switcher-menu .menu-section {
+  max-height: 240px;
+  overflow-y: auto;
+  padding-bottom: 4px;
+}
+.project-switcher-menu .menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+}
+.project-switcher-menu .menu-item:hover:not(:disabled) {
+  background: var(--panel-alt);
+}
+.project-switcher-menu .menu-item.active {
+  color: var(--accent);
+  font-weight: 600;
+}
+.project-switcher-menu .menu-item.danger {
+  color: var(--danger);
+}
+.project-switcher-menu .menu-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.project-switcher-menu .menu-item .check {
+  width: 14px;
+  display: inline-block;
+  color: var(--accent);
+}
+.project-switcher-menu .menu-item .menu-item-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.project-switcher-menu .menu-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
 .nav {
   background: #fff;
   border-bottom: 1px solid var(--border);

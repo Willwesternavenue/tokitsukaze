@@ -92,10 +92,10 @@ export default function InterviewNotesPage() {
   }
 
   function handleReset() {
-    if (!confirm("プロジェクトを初期状態に戻します。よろしいですか？")) return;
+    if (!confirm("現在のプロジェクトの取材メモ・構成案・本文を、サンプル状態に戻します。よろしいですか？\n（他のプロジェクトには影響しません。）")) return;
     const fresh = resetProject();
     setProject(fresh);
-    setInfo("初期状態に戻しました。");
+    setInfo("現在のプロジェクトをサンプル状態に戻しました。");
   }
 
   return (
@@ -109,7 +109,7 @@ export default function InterviewNotesPage() {
         </div>
         <div className="actions">
           <button className="btn ghost" onClick={handleReset} type="button">
-            初期状態に戻す
+            このプロジェクトをサンプルに戻す
           </button>
           <button
             className="btn primary lg"
