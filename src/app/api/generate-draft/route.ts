@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { AIConfigError, generateJson } from "@/lib/ai";
+import { AIConfigError, generateJsonWithRetry } from "@/lib/ai";
 import { defaultPrompts } from "@/lib/samples";
 import { safeJsonParse } from "@/lib/json";
 import { renderTemplate } from "@/lib/promptVars";
@@ -66,26 +66,51 @@ export async function POST(req: Request) {
   const formatNote = `\n\n出力は次のJSON形式（余計な文字は禁止）：\n${tpl.outputFormat}`;
 
   try {
-    const raw = await generateJson(
+    const result = await generateJsonWithRetry(
       [
         { role: "system", content: tpl.systemPrompt },
         { role: "user", content: userPrompt + formatNote },
       ],
-      { maxTokens: 3200 },
+      (raw) => {
+        const parsed = safeJsonParse<{ draft?: any } | any>(raw);
+        if (!parsed) return null;
+        const draftRaw = (parsed as any).draft ?? parsed;
+        if (typeof draftRaw?.body !== "string" || !draftRaw.body.trim()) return null;
+        const draft: SectionDraft = {
+          id: typeof draftRaw?.id === "string" && draftRaw.id ? draftRaw.id : makeId("draft"),
+          chapterId: chapter.id,
+          sectionId: section.id,
+          chapterTitle: chapter.title,
+          sectionTitle: section.title,
+          body: draftRaw.body,
+          editorNotes: strArr(draftRaw?.editorNotes),
+          followUpQuestions: strArr(draftRaw?.followUpQuestions),
+          factCheckPoints: strArr(draftRaw?.factCheckPoints),
+          continuityNotes: strArr(draftRaw?.continuityNotes),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        return draft;
+      },
+      { maxTokens: 3200, maxAttempts: 2 },
     );
 
-    const parsed = safeJsonParse<{ draft?: any } | any>(raw);
-    if (!parsed) {
-      console.error("[generate-draft] JSON parse failed. raw output:\n", raw);
-      // JSON parseに失敗してもフォールバックの本文を返してUIを壊さない
+    if (!result.parsed) {
+      console.error(
+        `[generate-draft] all ${result.attempts} attempts failed. last raw:\n`,
+        result.raw,
+      );
+      // 最後の手段としてテキストをそのままbodyに入れたフォールバックを返してUIを壊さない
       const fallback: SectionDraft = {
         id: makeId("draft"),
         chapterId: chapter.id,
         sectionId: section.id,
         chapterTitle: chapter.title,
         sectionTitle: section.title,
-        body: typeof raw === "string" ? raw.slice(0, 2000) : "",
-        editorNotes: ["AI出力をJSONとして解釈できなかったため、テキストをそのまま表示しています。"],
+        body: typeof result.raw === "string" ? result.raw.slice(0, 2000) : "",
+        editorNotes: [
+          `AI出力をJSONとして解釈できなかったため、テキストをそのまま表示しています (${result.attempts}回試行)。`,
+        ],
         followUpQuestions: [],
         factCheckPoints: [],
         continuityNotes: [],
@@ -95,23 +120,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ draft: fallback, parseFailed: true });
     }
 
-    const draftRaw = (parsed as any).draft ?? parsed;
-    const draft: SectionDraft = {
-      id: typeof draftRaw?.id === "string" && draftRaw.id ? draftRaw.id : makeId("draft"),
-      chapterId: chapter.id,
-      sectionId: section.id,
-      chapterTitle: chapter.title,
-      sectionTitle: section.title,
-      body: typeof draftRaw?.body === "string" ? draftRaw.body : "",
-      editorNotes: strArr(draftRaw?.editorNotes),
-      followUpQuestions: strArr(draftRaw?.followUpQuestions),
-      factCheckPoints: strArr(draftRaw?.factCheckPoints),
-      continuityNotes: strArr(draftRaw?.continuityNotes),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
-    return NextResponse.json({ draft });
+    return NextResponse.json({ draft: result.parsed });
   } catch (e) {
     if (e instanceof AIConfigError) {
       return NextResponse.json({ error: e.message }, { status: 500 });

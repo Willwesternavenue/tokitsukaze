@@ -35,10 +35,12 @@ const DEFAULT_ANTHROPIC_MODEL = "claude-haiku-4-5-20251001";
  */
 export async function generateJson(
   messages: ChatMessage[],
-  opts: { maxTokens?: number } = {},
+  opts: { maxTokens?: number; temperature?: number } = {},
 ): Promise<string> {
   const provider = getProvider();
   const maxTokens = opts.maxTokens ?? 4096;
+  // JSON生成は揺らぎを抑えるため低温度を既定にする
+  const temperature = opts.temperature ?? 0.2;
 
   if (provider === "anthropic") {
     const key = process.env.ANTHROPIC_API_KEY;
@@ -65,6 +67,7 @@ export async function generateJson(
     const res = await client.messages.create({
       model,
       max_tokens: maxTokens,
+      temperature,
       system: sys ? `${sys}\n\n${jsonRule}` : jsonRule,
       messages: userAndAssistant,
     });
@@ -89,6 +92,7 @@ export async function generateJson(
   const res = await client.chat.completions.create({
     model,
     response_format: { type: "json_object" },
+    temperature,
     max_tokens: maxTokens,
     messages: messages.map((m) => ({ role: m.role, content: m.content })),
   });
@@ -99,6 +103,48 @@ export async function generateJson(
   }
   console.log(`[ai] openai ${model} finish_reason=${finish} chars=${text.length}`);
   return text;
+}
+
+/**
+ * generateJson にリトライ機能を付けたヘルパ。
+ * parser が null を返した場合、AI に「前回出力は JSON として解釈できなかった」
+ * と伝えて再生成させる。最大 maxAttempts 回まで試行。
+ */
+export async function generateJsonWithRetry<T>(
+  messages: ChatMessage[],
+  parser: (raw: string) => T | null,
+  opts: { maxTokens?: number; temperature?: number; maxAttempts?: number } = {},
+): Promise<{ parsed: T | null; raw: string; attempts: number }> {
+  const maxAttempts = Math.max(1, opts.maxAttempts ?? 2);
+  let currentMessages = messages;
+  let lastRaw = "";
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const raw = await generateJson(currentMessages, opts);
+    lastRaw = raw;
+    const parsed = parser(raw);
+    if (parsed !== null) {
+      if (attempt > 1) console.log(`[ai] parse success on attempt ${attempt}`);
+      return { parsed, raw, attempts: attempt };
+    }
+    console.warn(
+      `[ai] attempt ${attempt}/${maxAttempts}: 出力をパースできず。リトライします。`,
+    );
+    if (attempt < maxAttempts) {
+      currentMessages = [
+        ...messages,
+        { role: "assistant", content: raw.slice(0, 2000) },
+        {
+          role: "user",
+          content:
+            "前回の出力は JSON として解釈できませんでした。" +
+            "説明文・前置き・後書き・コードフェンスを一切付けず、" +
+            "`{` から始まり `}` で終わる純粋で valid な JSON オブジェクトのみを、改めて1つだけ出力してください。",
+        },
+      ];
+    }
+  }
+  return { parsed: null, raw: lastRaw, attempts: maxAttempts };
 }
 
 export function currentProvider(): AIProvider {

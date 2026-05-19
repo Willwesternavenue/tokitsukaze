@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { AIConfigError, generateJson } from "@/lib/ai";
+import { AIConfigError, generateJsonWithRetry } from "@/lib/ai";
 import { defaultPrompts } from "@/lib/samples";
 import { safeJsonParse } from "@/lib/json";
 import { renderTemplate } from "@/lib/promptVars";
@@ -38,28 +38,39 @@ export async function POST(req: Request) {
   const formatNote = `\n\n出力は次のJSON形式（余計な文字は禁止）：\n${tpl.outputFormat}`;
 
   try {
-    const raw = await generateJson([
-      { role: "system", content: tpl.systemPrompt },
-      { role: "user", content: userPrompt + formatNote },
-    ]);
-    const parsed = safeJsonParse<any>(raw);
-    if (!parsed) {
+    const result = await generateJsonWithRetry(
+      [
+        { role: "system", content: tpl.systemPrompt },
+        { role: "user", content: userPrompt + formatNote },
+      ],
+      (raw) => {
+        const parsed = safeJsonParse<any>(raw);
+        if (!parsed) return null;
+        return {
+          editorNotes: strArr(parsed.editorNotes),
+          followUpQuestions: strArr(parsed.followUpQuestions),
+          factCheckPoints: strArr(parsed.factCheckPoints),
+          revisionSuggestions: strArr(parsed.revisionSuggestions),
+        };
+      },
+      { maxAttempts: 2 },
+    );
+    if (!result.parsed) {
+      console.error(
+        `[review-draft] all ${result.attempts} attempts failed. last raw:\n`,
+        result.raw,
+      );
       return NextResponse.json({
         editorNotes: [],
         followUpQuestions: [],
         factCheckPoints: [],
         revisionSuggestions: [
-          "AI出力をJSONとして解釈できませんでした。プロンプトの出力フォーマットを見直してください。",
+          `AI出力をJSONとして解釈できませんでした (${result.attempts}回試行)。`,
         ],
         parseFailed: true,
       });
     }
-    return NextResponse.json({
-      editorNotes: strArr(parsed.editorNotes),
-      followUpQuestions: strArr(parsed.followUpQuestions),
-      factCheckPoints: strArr(parsed.factCheckPoints),
-      revisionSuggestions: strArr(parsed.revisionSuggestions),
-    });
+    return NextResponse.json(result.parsed);
   } catch (e) {
     if (e instanceof AIConfigError) {
       return NextResponse.json({ error: e.message }, { status: 500 });

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { AIConfigError, generateJson } from "@/lib/ai";
+import { AIConfigError, generateJsonWithRetry } from "@/lib/ai";
 import { defaultPrompts } from "@/lib/samples";
 import { safeJsonParse } from "@/lib/json";
 import { renderTemplate } from "@/lib/promptVars";
@@ -65,19 +65,32 @@ export async function POST(req: Request) {
   const formatNote = `\n\n出力は次のJSON形式（余計な文字は禁止）：\n${tpl.outputFormat}`;
 
   try {
-    const raw = await generateJson([
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt + formatNote },
-    ]);
-    const parsed = safeJsonParse<{ outline?: any }>(raw);
-    if (!parsed) {
-      console.error("[generate-sections] JSON parse failed. raw output:\n", raw);
+    const result = await generateJsonWithRetry(
+      [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt + formatNote },
+      ],
+      (raw) => {
+        const parsed = safeJsonParse<{ outline?: any }>(raw);
+        if (!parsed) return null;
+        const aiOutline = (parsed as any)?.outline ?? parsed;
+        return mergeOutline(body.selectedOutline, aiOutline);
+      },
+      { maxAttempts: 2 },
+    );
+    if (!result.parsed) {
+      console.error(
+        `[generate-sections] all ${result.attempts} attempts failed. last raw:\n`,
+        result.raw,
+      );
       // フォールバック: 既存構成案をそのまま返す (画面側で「小見出しが空」の表示にする)
-      return NextResponse.json({ outline: body.selectedOutline, parseFailed: true, raw });
+      return NextResponse.json({
+        outline: body.selectedOutline,
+        parseFailed: true,
+        raw: result.raw,
+      });
     }
-    const aiOutline = (parsed as any)?.outline ?? parsed;
-    const merged = mergeOutline(body.selectedOutline, aiOutline);
-    return NextResponse.json({ outline: merged });
+    return NextResponse.json({ outline: result.parsed });
   } catch (e) {
     if (e instanceof AIConfigError) {
       return NextResponse.json({ error: e.message }, { status: 500 });

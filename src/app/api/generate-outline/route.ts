@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { AIConfigError, generateJson } from "@/lib/ai";
+import { AIConfigError, generateJsonWithRetry } from "@/lib/ai";
 import { defaultPrompts } from "@/lib/samples";
 import { safeJsonParse } from "@/lib/json";
 import { renderTemplate } from "@/lib/promptVars";
@@ -106,30 +106,33 @@ export async function POST(req: Request) {
   const formatNote = `\n\n出力は次のJSON形式で返してください（余計な文字は禁止）。\n${tpl.outputFormat}`;
 
   try {
-    const raw = await generateJson(
+    const result = await generateJsonWithRetry(
       [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt + formatNote },
       ],
-      { maxTokens: 6000 },
+      (raw) => {
+        const parsed = safeJsonParse<{ proposals?: unknown }>(raw);
+        if (!parsed) return null;
+        const proposals = normalizeProposals((parsed as any).proposals ?? parsed);
+        return proposals.length > 0 ? { proposals } : null;
+      },
+      { maxTokens: 6000, maxAttempts: 2 },
     );
-    const parsed = safeJsonParse<{ proposals?: unknown }>(raw);
-    if (!parsed) {
-      console.error("[generate-outline] JSON parse failed. raw output:\n", raw);
+    if (!result.parsed) {
+      console.error(
+        `[generate-outline] all ${result.attempts} attempts failed. last raw:\n`,
+        result.raw,
+      );
       return NextResponse.json(
         {
-          error: "AI出力をJSONとして解釈できませんでした。プロンプトを見直してください。",
-          raw,
+          error: `AI出力をJSONとして解釈できませんでした (${result.attempts}回試行)。プロンプトまたは入力内容を確認してください。`,
+          raw: result.raw,
         },
         { status: 502 },
       );
     }
-    const proposals = normalizeProposals(parsed.proposals ?? parsed);
-    if (proposals.length === 0) {
-      console.error("[generate-outline] proposals empty after normalize. raw:\n", raw);
-      return NextResponse.json({ error: "構成案が空でした。", raw }, { status: 502 });
-    }
-    return NextResponse.json({ proposals });
+    return NextResponse.json(result.parsed);
   } catch (e) {
     if (e instanceof AIConfigError) {
       return NextResponse.json({ error: e.message }, { status: 500 });
