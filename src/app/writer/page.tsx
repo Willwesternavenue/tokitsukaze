@@ -9,8 +9,9 @@ import {
   upsertDraft,
   withStyleRules,
 } from "@/lib/storage";
-import type { Chapter, Project, Section, SectionDraft } from "@/lib/types";
+import type { Chapter, OutlineProposal, Project, Section, SectionDraft } from "@/lib/types";
 import { exportProjectDocx, exportSectionDocx } from "@/lib/docx";
+import { postJson } from "@/lib/apiClient";
 
 type Selected = { chapter: Chapter; section: Section } | null;
 
@@ -89,22 +90,15 @@ export default function WriterPage() {
       const prompts = loadPrompts();
       const base = prompts.find((p) => p.id === "prompt-draft");
       const promptTemplate = base ? withStyleRules(base) : undefined;
-      const res = await fetch("/api/generate-draft", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          project,
-          chapter: selected.chapter,
-          section: selected.section,
-          promptTemplate,
-        }),
+      const r = await postJson<{ draft?: SectionDraft }>("/api/generate-draft", {
+        project,
+        chapter: selected.chapter,
+        section: selected.section,
+        promptTemplate,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "本文生成に失敗しました。");
-      const draft: SectionDraft | undefined = data?.draft;
-      if (!draft) {
-        throw new Error("AIから本文が返りませんでした。");
-      }
+      if (!r.ok) throw new Error(r.error ?? "本文生成に失敗しました。");
+      const draft = r.data?.draft;
+      if (!draft) throw new Error("AIから本文が返りませんでした。");
       const next = upsertDraft(draft);
       setProject(next);
     } catch (e) {
@@ -122,25 +116,26 @@ export default function WriterPage() {
       const prompts = loadPrompts();
       const base = prompts.find((p) => p.id === "prompt-review");
       const promptTemplate = base ? withStyleRules(base) : undefined;
-      const res = await fetch("/api/review-draft", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          draft: currentDraft,
-          writingMemory: project.writingMemory,
-          promptTemplate,
-        }),
+      const r = await postJson<{
+        editorNotes?: string[];
+        followUpQuestions?: string[];
+        factCheckPoints?: string[];
+        revisionSuggestions?: string[];
+      }>("/api/review-draft", {
+        draft: currentDraft,
+        writingMemory: project.writingMemory,
+        promptTemplate,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "編集レビューに失敗しました。");
+      if (!r.ok) throw new Error(r.error ?? "編集レビューに失敗しました。");
+      const data = r.data ?? {};
       const merged: SectionDraft = {
         ...currentDraft,
-        editorNotes: [...currentDraft.editorNotes, ...(data?.editorNotes ?? [])],
-        followUpQuestions: [...currentDraft.followUpQuestions, ...(data?.followUpQuestions ?? [])],
-        factCheckPoints: [...currentDraft.factCheckPoints, ...(data?.factCheckPoints ?? [])],
+        editorNotes: [...currentDraft.editorNotes, ...(data.editorNotes ?? [])],
+        followUpQuestions: [...currentDraft.followUpQuestions, ...(data.followUpQuestions ?? [])],
+        factCheckPoints: [...currentDraft.factCheckPoints, ...(data.factCheckPoints ?? [])],
         continuityNotes: [
           ...currentDraft.continuityNotes,
-          ...((data?.revisionSuggestions ?? []) as string[]).map((s) => `[修正案] ${s}`),
+          ...((data.revisionSuggestions ?? []) as string[]).map((s) => `[修正案] ${s}`),
         ],
         updatedAt: new Date().toISOString(),
       };
@@ -163,32 +158,31 @@ export default function WriterPage() {
         ...project.selectedOutline,
         chapters: project.selectedOutline.chapters.map((c) => ({ ...c, sections: [] })),
       };
-      const res = await fetch("/api/generate-sections", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const r = await postJson<{ outline?: OutlineProposal; parseFailed?: boolean }>(
+        "/api/generate-sections",
+        {
           selectedOutline: cleared,
           interviewNotes: project.interviewNotes,
           writingMemory: project.writingMemory,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "小見出しの生成に失敗しました。");
-      if (!data?.outline) throw new Error("APIから構成案が返りませんでした。");
-      if (data?.parseFailed) {
+        },
+      );
+      if (!r.ok) throw new Error(r.error ?? "小見出しの生成に失敗しました。");
+      if (!r.data?.outline) throw new Error("APIから構成案が返りませんでした。");
+      if (r.data?.parseFailed) {
         throw new Error("AI出力の解釈に失敗しました。もう一度お試しください。");
       }
-      const totalSections = (data.outline.chapters ?? []).reduce(
-        (sum: number, c: any) => sum + (c.sections?.length ?? 0),
+      const outline = r.data.outline;
+      const totalSections = (outline.chapters ?? []).reduce(
+        (sum: number, c: Chapter) => sum + (c.sections?.length ?? 0),
         0,
       );
       if (totalSections === 0) {
         throw new Error("小見出しが1件も生成されませんでした。もう一度お試しください。");
       }
-      const next = replaceSelectedOutline(data.outline);
+      const next = replaceSelectedOutline(outline);
       setProject(next);
       // 最初の小見出しを選択状態に
-      const firstChapter = data.outline.chapters?.[0];
+      const firstChapter = outline.chapters?.[0];
       const firstSection = firstChapter?.sections?.[0];
       if (firstChapter && firstSection) {
         setSelected({ chapter: firstChapter, section: firstSection });

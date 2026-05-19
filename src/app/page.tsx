@@ -9,6 +9,7 @@ import {
   setOutlineProposals,
   resetProject,
 } from "@/lib/storage";
+import { postJson } from "@/lib/apiClient";
 import type { OutlineProposal, Project } from "@/lib/types";
 
 export default function InterviewNotesPage() {
@@ -59,24 +60,22 @@ export default function InterviewNotesPage() {
     try {
       const prompts = loadPrompts();
       const promptTemplate = prompts.find((p) => p.id === "prompt-outline");
-      const res = await fetch("/api/generate-outline", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectName: project.name,
-          intervieweeName: project.intervieweeName,
-          theme: project.theme,
-          targetReader: project.targetReader,
-          desiredTone: project.desiredTone,
-          interviewNotes: project.interviewNotes,
-          promptTemplate,
-        }),
+      const r = await postJson<{ proposals?: OutlineProposal[] }>("/api/generate-outline", {
+        projectName: project.name,
+        intervieweeName: project.intervieweeName,
+        theme: project.theme,
+        targetReader: project.targetReader,
+        desiredTone: project.desiredTone,
+        interviewNotes: project.interviewNotes,
+        promptTemplate,
       });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error || "構成案の生成に失敗しました。");
+      if (!r.ok) {
+        setError(`AI生成に失敗しました。${r.error ?? ""}`);
+        return;
       }
-      const proposals: OutlineProposal[] = Array.isArray(data?.proposals) ? data.proposals : [];
+      const proposals: OutlineProposal[] = Array.isArray(r.data?.proposals)
+        ? (r.data!.proposals as OutlineProposal[])
+        : [];
       if (proposals.length === 0) {
         setError("AIが構成案を返しませんでした。プロンプトや入力内容を確認してください。");
         return;
@@ -194,7 +193,13 @@ export default function InterviewNotesPage() {
       <div className="panel">
         <div className="panel-header">
           <h2>取材メモ</h2>
-          <span className="hint">{charCount.toLocaleString()} 文字</span>
+          <span className={`hint ${charCount > 20000 ? "" : ""}`} style={{
+            color: charCount > 40000 ? "var(--danger)" : charCount > 20000 ? "var(--warn)" : undefined,
+            fontWeight: charCount > 20000 ? 600 : undefined,
+          }}>
+            {charCount.toLocaleString()} 文字
+            {charCount > 40000 ? "（長すぎ：タイムアウトの可能性）" : charCount > 20000 ? "（推奨上限超え）" : ""}
+          </span>
         </div>
         <div className="panel-body">
           <div className="field" style={{ marginBottom: 4 }}>
@@ -208,6 +213,7 @@ export default function InterviewNotesPage() {
             <p className="help">
               事実関係のみで構いません。整形・要約はAIが行います。
               個人を特定する情報は事前にマスキングしてください。
+              長さの目安は <strong>20,000 字以内</strong>。40,000 字を超えるとサーバタイムアウト（最大 180 秒）に達する可能性があります。
             </p>
           </div>
         </div>

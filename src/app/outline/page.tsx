@@ -10,6 +10,7 @@ import {
   setOutlineProposals,
   updateProject,
 } from "@/lib/storage";
+import { postJson } from "@/lib/apiClient";
 import type { OutlineProposal, Project } from "@/lib/types";
 
 const TYPE_LABEL: Record<OutlineProposal["type"], string> = {
@@ -50,22 +51,22 @@ export default function OutlinePage() {
     try {
       const prompts = loadPrompts();
       const promptTemplate = prompts.find((p) => p.id === "prompt-outline");
-      const res = await fetch("/api/generate-outline", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectName: project.name,
-          intervieweeName: project.intervieweeName,
-          theme: project.theme,
-          targetReader: project.targetReader,
-          desiredTone: project.desiredTone,
-          interviewNotes: project.interviewNotes,
-          promptTemplate,
-        }),
+      const r = await postJson<{ proposals?: OutlineProposal[] }>("/api/generate-outline", {
+        projectName: project.name,
+        intervieweeName: project.intervieweeName,
+        theme: project.theme,
+        targetReader: project.targetReader,
+        desiredTone: project.desiredTone,
+        interviewNotes: project.interviewNotes,
+        promptTemplate,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "再生成に失敗しました。");
-      const proposals: OutlineProposal[] = Array.isArray(data?.proposals) ? data.proposals : [];
+      if (!r.ok) {
+        setError(r.error ?? "再生成に失敗しました。");
+        return;
+      }
+      const proposals: OutlineProposal[] = Array.isArray(r.data?.proposals)
+        ? (r.data!.proposals as OutlineProposal[])
+        : [];
       if (proposals.length === 0) {
         setError("AIが構成案を返しませんでした。");
         return;
@@ -91,30 +92,27 @@ export default function OutlinePage() {
       }
       const needsSections = next.selectedOutline.chapters.some((c) => !c.sections || c.sections.length === 0);
       if (needsSections) {
-        const res = await fetch("/api/generate-sections", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+        const r = await postJson<{ outline?: OutlineProposal; parseFailed?: boolean }>(
+          "/api/generate-sections",
+          {
             selectedOutline: next.selectedOutline,
             interviewNotes: next.interviewNotes,
             writingMemory: next.writingMemory,
-          }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data?.error || "小見出しの生成に失敗しました。");
-        if (data?.outline) {
+          },
+        );
+        if (!r.ok) throw new Error(r.error ?? "小見出しの生成に失敗しました。");
+        if (r.data?.outline) {
           next = updateProject((p) => ({
             ...p,
-            selectedOutline: data.outline,
+            selectedOutline: r.data!.outline,
           }));
           setProject(next);
         }
-        if (data?.parseFailed) {
+        if (r.data?.parseFailed) {
           throw new Error(
             "小見出しの生成に失敗しました（AI出力をJSONとして解釈できませんでした）。もう一度「この構成案で進める」を押してください。",
           );
         }
-        // 全ての章で sections が空ならエラー扱い
         const hasAnySection = next.selectedOutline?.chapters.some(
           (c) => c.sections && c.sections.length > 0,
         );
