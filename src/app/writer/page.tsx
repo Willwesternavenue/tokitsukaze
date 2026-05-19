@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   loadProject,
   loadPrompts,
+  replaceSelectedOutline,
   upsertDraft,
   withStyleRules,
 } from "@/lib/storage";
@@ -19,6 +20,7 @@ export default function WriterPage() {
   const [loading, setLoading] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [regenSections, setRegenSections] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -151,6 +153,53 @@ export default function WriterPage() {
     }
   }
 
+  async function handleRegenSections() {
+    if (!project?.selectedOutline) return;
+    setError(null);
+    setRegenSections(true);
+    try {
+      // 既存の小見出しをクリアしてから再生成（無いとAPIは「もうあるよ」と判断する場合がある）
+      const cleared = {
+        ...project.selectedOutline,
+        chapters: project.selectedOutline.chapters.map((c) => ({ ...c, sections: [] })),
+      };
+      const res = await fetch("/api/generate-sections", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          selectedOutline: cleared,
+          interviewNotes: project.interviewNotes,
+          writingMemory: project.writingMemory,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "小見出しの生成に失敗しました。");
+      if (!data?.outline) throw new Error("APIから構成案が返りませんでした。");
+      if (data?.parseFailed) {
+        throw new Error("AI出力の解釈に失敗しました。もう一度お試しください。");
+      }
+      const totalSections = (data.outline.chapters ?? []).reduce(
+        (sum: number, c: any) => sum + (c.sections?.length ?? 0),
+        0,
+      );
+      if (totalSections === 0) {
+        throw new Error("小見出しが1件も生成されませんでした。もう一度お試しください。");
+      }
+      const next = replaceSelectedOutline(data.outline);
+      setProject(next);
+      // 最初の小見出しを選択状態に
+      const firstChapter = data.outline.chapters?.[0];
+      const firstSection = firstChapter?.sections?.[0];
+      if (firstChapter && firstSection) {
+        setSelected({ chapter: firstChapter, section: firstSection });
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRegenSections(false);
+    }
+  }
+
   async function handleExportSection() {
     if (!project || !currentDraft) return;
     setExporting(true);
@@ -205,7 +254,16 @@ export default function WriterPage() {
         <aside className="panel">
           <div className="panel-header">
             <h2>章・小見出し</h2>
-            <span className="hint">クリックで切替</span>
+            <button
+              className="btn sm"
+              onClick={handleRegenSections}
+              disabled={regenSections}
+              type="button"
+              title="AIに小見出しを再生成させる"
+            >
+              {regenSections ? <span className="spinner" /> : null}
+              {regenSections ? "再生成中…" : "小見出しを再生成"}
+            </button>
           </div>
           <div className="panel-body dense">
             <ul className="toc">

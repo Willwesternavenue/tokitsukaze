@@ -109,6 +109,20 @@ export default function OutlinePage() {
           }));
           setProject(next);
         }
+        if (data?.parseFailed) {
+          throw new Error(
+            "小見出しの生成に失敗しました（AI出力をJSONとして解釈できませんでした）。もう一度「この構成案で進める」を押してください。",
+          );
+        }
+        // 全ての章で sections が空ならエラー扱い
+        const hasAnySection = next.selectedOutline?.chapters.some(
+          (c) => c.sections && c.sections.length > 0,
+        );
+        if (!hasAnySection) {
+          throw new Error(
+            "小見出しが1件も生成されませんでした。もう一度「この構成案で進める」を押してください。",
+          );
+        }
       }
       router.push("/writer");
     } catch (e) {

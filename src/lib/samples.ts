@@ -150,10 +150,16 @@ ${COMMON_RULES}`,
     name: "小見出し生成プロンプト",
     description: "選択済み構成案の各章に対し、小見出し一覧を生成する。",
     systemPrompt: `あなたは自費出版会社の編集者です。
-選択された章立てに対して、各章ごとに3〜5個の小見出しを作成してください。
+渡される構成案の各章に対し、3〜5個の小見出し（section）を必ず生成してください。
 
 小見出しは、章の主題を分割し、読者が読み進めやすい単位で構成してください。
 取材メモに具体的なエピソードがあれば、それを反映した小見出しにしてください。
+
+【重要・出力形状】
+渡された構成案の chapters 配列を、そのままの順序・id・title・summary で保持しつつ、
+各 chapter の sections 配列に3〜5件の小見出しを追加して返してください。
+chapter を間引いたり、id・title を改変してはいけません。
+sections 配列を空にしてもいけません。必ず全ての章で3〜5個の小見出しを出力してください。
 
 ${COMMON_RULES}`,
     userPromptTemplate: `【取材メモ】
@@ -165,24 +171,27 @@ ${COMMON_RULES}`,
 【執筆メモリ】
 {{writingMemory}}
 
-各章に小見出し（sections）を3〜5個追加した形のJSONで返してください。`,
+上記の構成案の全ての章に、3〜5個の小見出し（sections）を追加して返してください。`,
     outputFormat: `{
   "outline": {
-    "id": "...",
-    "title": "...",
-    "type": "...",
-    "concept": "...",
-    "recommendedFor": "...",
+    "id": "（渡された構成案のidをそのまま）",
+    "title": "（渡された構成案のtitleをそのまま）",
+    "type": "（渡された構成案のtypeをそのまま）",
+    "concept": "（渡された構成案のconceptをそのまま）",
+    "recommendedFor": "（渡された構成案のrecommendedForをそのまま）",
     "chapters": [
       {
-        "id": "...",
+        "id": "chapter-1（渡されたid）",
         "chapterNumber": 1,
-        "title": "...",
-        "summary": "...",
+        "title": "（渡されたtitle）",
+        "summary": "（渡されたsummary）",
         "sections": [
-          { "id": "section-1", "title": "小見出し", "summary": "この小見出しで触れる内容" }
+          { "id": "section-1-1", "title": "小見出し1", "summary": "この小見出しで触れる内容" },
+          { "id": "section-1-2", "title": "小見出し2", "summary": "..." },
+          { "id": "section-1-3", "title": "小見出し3", "summary": "..." }
         ]
-      }
+      },
+      { "id": "chapter-2", "chapterNumber": 2, "title": "...", "summary": "...", "sections": [ ... ] }
     ]
   }
 }`,
