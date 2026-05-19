@@ -92,7 +92,7 @@ export async function POST(req: Request) {
         };
         return draft;
       },
-      { maxTokens: 3200, maxAttempts: 2 },
+      { maxTokens: 6000, maxAttempts: 2 },
     );
 
     if (!result.parsed) {

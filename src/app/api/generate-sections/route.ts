@@ -146,7 +146,7 @@ export async function POST(req: Request) {
         }
         return merged;
       },
-      { maxAttempts: 2 },
+      { maxTokens: 12000, maxAttempts: 2 },
     );
     if (!result.parsed) {
       console.error(

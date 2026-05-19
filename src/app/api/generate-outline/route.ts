@@ -117,7 +117,7 @@ export async function POST(req: Request) {
         const proposals = normalizeProposals((parsed as any).proposals ?? parsed);
         return proposals.length > 0 ? { proposals } : null;
       },
-      { maxTokens: 6000, maxAttempts: 2 },
+      { maxTokens: 16000, maxAttempts: 2 },
     );
     if (!result.parsed) {
       console.error(
