@@ -15,12 +15,24 @@ config({ path: ".env" });
  *   npx drizzle-kit migrate     // DB にマイグレーションを適用
  *   npx drizzle-kit studio      // ブラウザで DB を閲覧
  */
+// Vercel Marketplace の Neon integration は POSTGRES_URL を作るため両対応
+function resolveUrl(): string {
+  const candidates = [
+    process.env.DATABASE_URL,
+    process.env.POSTGRES_URL,
+    process.env.POSTGRES_PRISMA_URL,
+    process.env.DATABASE_URL_UNPOOLED,
+    process.env.POSTGRES_URL_NON_POOLING,
+  ];
+  return candidates.find((v) => typeof v === "string" && v.length > 0) ?? "";
+}
+
 export default {
   schema: "./src/db/schema.ts",
   out: "./drizzle",
   dialect: "postgresql",
   dbCredentials: {
-    url: process.env.DATABASE_URL ?? "",
+    url: resolveUrl(),
   },
   strict: true,
   verbose: true,
