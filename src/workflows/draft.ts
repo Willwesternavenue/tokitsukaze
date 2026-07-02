@@ -5,7 +5,7 @@ import { renderTemplate } from "@/lib/promptVars";
 import { safeJsonParse } from "@/lib/json";
 import { makeId } from "@/lib/ids";
 import { runAiStep } from "./shared";
-import { saveSectionDraft } from "@/db/queries";
+import { saveProjectSnapshot, saveSectionDraft } from "@/db/queries";
 
 export type DraftWorkflowInput = {
   project: Project;
@@ -26,7 +26,8 @@ export async function draftWorkflow(input: DraftWorkflowInput): Promise<DraftWor
   const runId = getWorkflowMetadata().workflowRunId;
   const result = await draftStep(input, runId);
   // 生成成功時のみ DB に永続化 (DB 未設定なら no-op)
-  await persistDraftStep(input.project.id, result.draft, {
+  // sections.project_id は projects.id への FK なので、先に project を upsert してから section を保存する
+  await persistDraftStep(input.project, result.draft, {
     runId: result.meta.runId,
     model: result.meta.model,
   });
@@ -130,12 +131,15 @@ async function draftStep(
 }
 
 async function persistDraftStep(
-  projectId: string,
+  project: Project,
   draft: SectionDraft,
   meta: { runId: string; model: string },
 ): Promise<void> {
   "use step";
-  await saveSectionDraft(projectId, draft, {
+  // 1. project を先に upsert (FK 制約を満たすため)
+  await saveProjectSnapshot(project);
+  // 2. section を保存
+  await saveSectionDraft(project.id, draft, {
     runId: meta.runId,
     model: meta.model,
     promptVersion: null,
