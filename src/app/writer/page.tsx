@@ -6,6 +6,7 @@ import {
   loadProject,
   loadPrompts,
   replaceSelectedOutline,
+  saveSectionAgentReports,
   upsertDraft,
   withStyleRules,
 } from "@/lib/storage";
@@ -19,6 +20,7 @@ import type {
 } from "@/lib/types";
 import { exportProjectDocx, exportSectionDocx } from "@/lib/docx";
 import { postJson } from "@/lib/apiClient";
+import { getGenreConfig } from "@/lib/genreConfig";
 
 type Selected = { chapter: Chapter; section: Section } | null;
 
@@ -30,9 +32,6 @@ export default function WriterPage() {
   const [exporting, setExporting] = useState(false);
   const [regenSections, setRegenSections] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // P2: 直近の draft 生成で受け取ったエージェント診断。
-  // (chapterId::sectionId) をキーに保持し、切替時にリセット。
-  const [agentReports, setAgentReports] = useState<Record<string, AgentReportSummary[]>>({});
 
   useEffect(() => {
     const p = loadProject();
@@ -43,6 +42,8 @@ export default function WriterPage() {
       if (firstSection) setSelected({ chapter: firstChapter, section: firstSection });
     }
   }, []);
+
+  const writingTitle = getGenreConfig(project?.genre).stages.writing.pageTitle;
 
   const draftMap = useMemo(() => {
     const m = new Map<string, SectionDraft>();
@@ -56,16 +57,18 @@ export default function WriterPage() {
   }, [selected, draftMap]);
 
   const currentAgentReports: AgentReportSummary[] = useMemo(() => {
-    if (!selected) return [];
-    return agentReports[`${selected.chapter.id}::${selected.section.id}`] ?? [];
-  }, [selected, agentReports]);
+    if (!selected || !project) return [];
+    return (
+      project.sectionAgentReports?.[`${selected.chapter.id}::${selected.section.id}`] ?? []
+    );
+  }, [selected, project]);
 
   if (!project) {
     return (
       <>
         <div className="page-header">
           <div>
-            <h1>原稿生成</h1>
+            <h1>{writingTitle}</h1>
             <p className="subtitle">選択した構成案をもとに、小見出し単位で本文を生成します。</p>
           </div>
         </div>
@@ -79,7 +82,7 @@ export default function WriterPage() {
       <>
         <div className="page-header">
           <div>
-            <h1>原稿生成</h1>
+            <h1>{writingTitle}</h1>
             <p className="subtitle">構成案がまだ選ばれていません。</p>
           </div>
         </div>
@@ -95,10 +98,6 @@ export default function WriterPage() {
 
   async function handleGenerate(force = false) {
     if (!project || !selected) return;
-    const key = `${selected.chapter.id}::${selected.section.id}`;
-    if (!force && draftMap.has(key)) {
-      // すでに生成済み: 再生成は force=true のとき
-    }
     setError(null);
     setLoading(true);
     try {
@@ -117,12 +116,12 @@ export default function WriterPage() {
       if (!r.ok) throw new Error(r.error ?? "本文生成に失敗しました。");
       const draft = r.data?.draft;
       if (!draft) throw new Error("AIから本文が返りませんでした。");
-      const next = upsertDraft(draft);
-      setProject(next);
-      // P2: エージェント診断結果を保持
+      upsertDraft(draft);
+      // 診断結果を project に永続化 (/review 画面の集約元になる)
       const reports = r.data?.agentReports ?? [];
       const key = `${draft.chapterId}::${draft.sectionId}`;
-      setAgentReports((prev) => ({ ...prev, [key]: reports }));
+      const next = saveSectionAgentReports(key, reports);
+      setProject(next);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -250,7 +249,7 @@ export default function WriterPage() {
     <>
       <div className="page-header">
         <div>
-          <h1>原稿生成</h1>
+          <h1>{writingTitle}</h1>
           <p className="subtitle">
             構成：<strong>{outline.title}</strong>　／
             生成済み {project.generatedSections.length} / {outline.chapters.reduce((a, c) => a + c.sections.length, 0)} 節

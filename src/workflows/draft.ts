@@ -46,6 +46,7 @@ export async function draftWorkflow(input: DraftWorkflowInput): Promise<DraftWor
 
   // 2. 本文が成功した時だけエージェントを並列実行
   //    (失敗時のフォールバック本文にレビューをかけても意味がないので skip)
+  //    Project.agentToggles で無効化されたレビュアーはスキップ (未設定キーは有効)
   let agentReports: AgentReportSummary[] = [];
   if (result.ok) {
     const ctx = {
@@ -54,19 +55,20 @@ export async function draftWorkflow(input: DraftWorkflowInput): Promise<DraftWor
       chapter: input.chapter,
       section: input.section,
     };
-    // 共通 4 エージェント
-    const commonSteps = [
-      proofreaderStep(ctx, runId),
-      styleGuardianStep(ctx, runId),
-      consistencyLiteStep(ctx, runId),
-      readerExperienceStep(ctx, runId),
-    ];
-    // P3: novel なら小説専任 2 エージェントを追加 (計 6 並列)
-    const novelSteps =
-      input.project.genre === "novel"
-        ? [characterVoiceStep(ctx, runId), tensionStep(ctx, runId)]
-        : [];
-    agentReports = await Promise.all([...commonSteps, ...novelSteps]);
+    const toggles = input.project.agentToggles ?? {};
+    const enabled = (key: keyof typeof toggles) => toggles[key] !== false;
+
+    const steps: Promise<AgentReportSummary>[] = [];
+    if (enabled("proofreader")) steps.push(proofreaderStep(ctx, runId));
+    if (enabled("style-guardian")) steps.push(styleGuardianStep(ctx, runId));
+    if (enabled("consistency-lite")) steps.push(consistencyLiteStep(ctx, runId));
+    if (enabled("reader-experience")) steps.push(readerExperienceStep(ctx, runId));
+    // P3: novel なら小説専任 2 エージェントを追加
+    if (input.project.genre === "novel") {
+      if (enabled("character-voice")) steps.push(characterVoiceStep(ctx, runId));
+      if (enabled("tension-checker")) steps.push(tensionStep(ctx, runId));
+    }
+    agentReports = await Promise.all(steps);
   }
 
   // 3. 全部まとめて永続化 (DB 未設定なら no-op)

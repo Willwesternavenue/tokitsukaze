@@ -52,6 +52,8 @@ export function newProject(name?: string): Project {
     genre: "biography",
     characters: [],
     storyBible: { ...emptyStoryBible },
+    agentToggles: {},
+    sectionAgentReports: {},
   };
 }
 
@@ -74,6 +76,8 @@ function emptyProject(name: string, genre: "biography" | "novel" = "biography"):
     genre,
     characters: [...emptyCharacters],
     storyBible: { ...emptyStoryBible },
+    agentToggles: {},
+    sectionAgentReports: {},
   };
 }
 
@@ -86,6 +90,8 @@ function mergeDefaults(p: Project): Project {
     genre: (p as any).genre ?? "biography",
     characters: Array.isArray((p as any).characters) ? (p as any).characters : [],
     storyBible: { ...emptyStoryBible, ...((p as any).storyBible || {}) },
+    agentToggles: { ...((p as any).agentToggles || {}) },
+    sectionAgentReports: { ...((p as any).sectionAgentReports || {}) },
   };
 }
 
@@ -318,6 +324,28 @@ export function updateCharacters(chars: import("./types").NovelCharacter[]): Pro
 
 export function updateStoryBible(bible: import("./types").StoryBible): Project {
   return updateProject((p) => ({ ...p, storyBible: bible }));
+}
+
+// ===== Nav 再構成: AIスタッフのトグルと診断結果 =====
+
+export function updateAgentToggle(
+  agentKey: import("./types").AgentKey,
+  enabled: boolean,
+): Project {
+  return updateProject((p) => ({
+    ...p,
+    agentToggles: { ...(p.agentToggles ?? {}), [agentKey]: enabled },
+  }));
+}
+
+export function saveSectionAgentReports(
+  sectionKey: string,
+  reports: import("./types").AgentReportSummary[],
+): Project {
+  return updateProject((p) => ({
+    ...p,
+    sectionAgentReports: { ...(p.sectionAgentReports ?? {}), [sectionKey]: reports },
+  }));
 }
 
 // ===== Prompts (global) =====

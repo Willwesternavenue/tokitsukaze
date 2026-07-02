@@ -10,6 +10,7 @@ import {
   resetProject,
 } from "@/lib/storage";
 import { postJson } from "@/lib/apiClient";
+import { getGenreConfig, allGenres } from "@/lib/genreConfig";
 import type { OutlineProposal, Project } from "@/lib/types";
 
 export default function InterviewNotesPage() {
@@ -98,26 +99,14 @@ export default function InterviewNotesPage() {
     setInfo("現在のプロジェクトをサンプル状態に戻しました。");
   }
 
-  const isNovel = project.genre === "novel";
-  const labels = isNovel
-    ? {
-        h1: "素材入力（小説モード）",
-        subtitle: "書きたい物語のプロット・シーン案・登場人物のアイデアを入力し、章立て案を生成します。",
-        panelTitle: "プロット / 素材メモ",
-        placeholder:
-          "物語のあらすじ、書きたいシーン、主人公の背景、対立構造、テーマなどを自由に入力してください。取材や実話ベースの素材でも構いません。",
-        help: "プロット・設定・シーン案などをまとめて投入できます。この内容と、登場人物 (/characters)・Story Bible (/bible) に登録した情報を合わせて AI が章立て → 本文を組み立てます。",
-        generateButton: "章立て案を生成する",
-      }
-    : {
-        h1: "取材メモ入力",
-        subtitle: "取材で聞いた内容を貼り付け、章立て案を3パターン生成します。",
-        panelTitle: "取材メモ",
-        placeholder:
-          "取材で聞き取った内容を、箇条書き／自由記述どちらでも貼り付けてください。",
-        help: "事実関係のみで構いません。整形・要約はAIが行います。個人を特定する情報は事前にマスキングしてください。長さの目安は 20,000 字以内。40,000 字を超えるとサーバタイムアウト（最大 180 秒）に達する可能性があります。",
-        generateButton: "章立て案を生成する",
-      };
+  const config = getGenreConfig(project.genre);
+  const labels = {
+    h1: config.stages.material.pageTitle,
+    subtitle: config.stages.material.description,
+    panelTitle: config.material.panelTitle,
+    placeholder: config.material.placeholder,
+    help: config.material.help,
+  };
 
   return (
     <>
@@ -170,17 +159,20 @@ export default function InterviewNotesPage() {
                 value={project.genre ?? "biography"}
                 onChange={(e) => updateField("genre", e.target.value as "biography" | "novel")}
               >
-                <option value="biography">聞き書き（自伝・人物伝）</option>
-                <option value="novel">小説モード（Character / Story Bible 有効）</option>
+                {allGenres.map((g) => (
+                  <option key={g.genre} value={g.genre}>
+                    {g.label}
+                  </option>
+                ))}
               </select>
               <p className="help">
-                小説モードに切り替えると、上部ナビに「登場人物」「Story Bible」が現れ、本文生成時に小説専任エージェント (Character Voice / Tension) が追加で走ります。
+                モードによってワークフローのラベル・ナレッジ項目・自動実行されるAIスタッフが切り替わります。
               </p>
             </div>
           </div>
           <div className="field-row">
             <div className="field">
-              <label htmlFor="proj-interviewee">取材対象者名 / 主人公名</label>
+              <label htmlFor="proj-interviewee">{config.material.subjectLabel}</label>
               <input
                 id="proj-interviewee"
                 type="text"

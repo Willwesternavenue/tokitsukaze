@@ -95,6 +95,11 @@ export type Project = {
   genre: "biography" | "novel";
   characters: NovelCharacter[];
   storyBible: StoryBible;
+  // ===== Nav 再構成: AIスタッフのトグルと診断結果の永続化 =====
+  /** 自動レビュアーの有効/無効。未設定キーは有効扱い */
+  agentToggles?: Partial<Record<AgentKey, boolean>>;
+  /** "chapterId::sectionId" → 直近の診断結果。/review 画面の集約元 */
+  sectionAgentReports?: Record<string, AgentReportSummary[]>;
 };
 
 export type ReviewResult = {

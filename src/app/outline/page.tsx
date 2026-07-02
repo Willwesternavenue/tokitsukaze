@@ -11,6 +11,7 @@ import {
   updateProject,
 } from "@/lib/storage";
 import { postJson } from "@/lib/apiClient";
+import { getGenreConfig } from "@/lib/genreConfig";
 import type { OutlineProposal, Project } from "@/lib/types";
 
 const TYPE_LABEL: Record<OutlineProposal["type"], string> = {
@@ -30,12 +31,14 @@ export default function OutlinePage() {
     setProject(loadProject());
   }, []);
 
+  const structureTitle = getGenreConfig(project?.genre).stages.structure.pageTitle;
+
   if (!project) {
     return (
       <>
         <div className="page-header">
           <div>
-            <h1>章立て構成案</h1>
+            <h1>{structureTitle}</h1>
             <p className="subtitle">AIが提示した3つの構成案から方向性を選びます。</p>
           </div>
         </div>
@@ -137,7 +140,7 @@ export default function OutlinePage() {
     <>
       <div className="page-header">
         <div>
-          <h1>章立て構成案</h1>
+          <h1>{structureTitle}</h1>
           <p className="subtitle">
             AIが3つの構成案を提示します。編集者が方向性を選択してください。
           </p>
