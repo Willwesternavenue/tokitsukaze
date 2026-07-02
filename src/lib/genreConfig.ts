@@ -101,6 +101,7 @@ export const novelConfig: GenreConfig = {
   },
   knowledge: [
     { href: "/characters", label: "登場人物" },
+    { href: "/relations", label: "人物相関図" },
     { href: "/bible", label: "Story Bible" },
     { href: "/memory", label: "執筆メモリ" },
   ],

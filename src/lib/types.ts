@@ -197,6 +197,23 @@ export type Foreshadow = {
   status: "seeded" | "resolved" | "unresolved";
 };
 
+/**
+ * 人物相関図の 1 本の関係。
+ * - mutual=true  : 対等な関係 (親友・夫婦・同僚)。矢印なしの 1 本線
+ * - mutual=false : 向きのある関係 (片想い・憧れ・憎悪)。from→to の矢印。
+ *                  逆向きの感情が異なる場合は別エントリとして両方向を登録する
+ * - source       : "ai" は AI 抽出分 (更新時に置き換え対象)、"manual" は手動登録 (保持される)
+ */
+export type CharacterRelationship = {
+  id: string;
+  fromId: string;
+  toId: string;
+  label: string;      // 相関図に載せる短いラベル (親子 / 幼馴染 / 商売敵)
+  mutual: boolean;
+  notes?: string;
+  source: "ai" | "manual";
+};
+
 export type StoryBible = {
   worldRules: WorldRule[];
   timelineEvents: TimelineEvent[];
@@ -204,4 +221,5 @@ export type StoryBible = {
   foreshadowingItems: Foreshadow[];
   continuityFacts: string[];    // "主人公は左利き" 等の細部
   unresolvedQuestions: string[]; // 読者に残っている疑問
+  relationships: CharacterRelationship[]; // 人物相関図
 };

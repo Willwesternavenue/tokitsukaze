@@ -1020,3 +1020,46 @@ hr.sep {
 .review-section-title {
   font-weight: 500;
 }
+
+/* ===== 人物相関図 ===== */
+.relations-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  padding: 6px 10px 2px;
+  font-size: 11px;
+  color: var(--text-soft);
+}
+.relations-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.relations-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.relation-row {
+  display: grid;
+  grid-template-columns: 1fr 52px 1fr 1.2fr 1.5fr auto 32px;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+}
+.relation-row:first-child {
+  border-top: none;
+}
+.relation-row .input {
+  height: 28px;
+  padding: 2px 8px;
+  font-size: 12px;
+}
+@media (max-width: 900px) {
+  .relation-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}

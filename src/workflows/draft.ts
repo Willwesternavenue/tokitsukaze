@@ -282,6 +282,21 @@ function buildNovelContext(project: Project): string {
           .join("\n"),
       );
     }
+    if (bible.relationships?.length) {
+      const nameOf = (id: string) =>
+        (project.characters ?? []).find((c) => c.id === id)?.name ?? id;
+      parts.push("## 人物相関");
+      parts.push(
+        bible.relationships
+          .map(
+            (r) =>
+              `- ${nameOf(r.fromId)} ${r.mutual ? "〈相互〉" : "→"} ${nameOf(r.toId)}: ${r.label}${
+                r.notes ? `（${r.notes}）` : ""
+              }`,
+          )
+          .join("\n"),
+      );
+    }
     if (bible.continuityFacts?.length) {
       parts.push("## 継続性ファクト（守るべき細部）");
       parts.push(bible.continuityFacts.map((f) => `- ${f}`).join("\n"));

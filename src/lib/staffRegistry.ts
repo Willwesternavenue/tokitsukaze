@@ -62,6 +62,15 @@ export const staffRegistry: StaffMeta[] = [
     runsWhen: "（手動実行・将来対応）",
     genres: ["biography"],
   },
+  {
+    promptId: "prompt-relations",
+    staffLabel: "相関図アナリスト",
+    group: "planning",
+    kind: "staff",
+    description: "登場人物と素材・本文から人物相関図（関係の向き・ラベル）を抽出します。",
+    runsWhen: "人物相関図の「AIで相関図を更新」実行時",
+    genres: ["novel"],
+  },
 
   // ===== 執筆スタッフ =====
   {

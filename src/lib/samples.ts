@@ -514,6 +514,45 @@ ${COMMON_RULES}`,
 }`,
   },
   {
+    id: "prompt-relations",
+    name: "エージェント：相関図アナリスト",
+    description:
+      "小説モード専用。登場人物リストと素材・本文から、人物相関図のデータ（関係の向き・ラベル）を抽出する。",
+    systemPrompt: `あなたは小説編集者で、人物相関図の作成担当です。
+登場人物リストと素材（プロット・本文）を読み、人物間の関係を抽出してください。
+
+ルール:
+- 登録済みの登場人物同士の関係のみを抽出する（新しい人物を作らない）
+- fromId / toId には登場人物リストの id をそのまま使う
+- label は相関図に載せる短い関係ラベル（2〜10字程度）。例: 親子、幼馴染、初恋の相手、商売敵、恩人、上司と部下
+- 対等な関係（親友・夫婦・同僚・きょうだい等）は mutual: true で 1 エントリにする
+- 向きで意味が変わる関係（片想い、憧れ、憎悪、恩義など）は mutual: false とし、from→to の向きで表現する。
+  逆向きの感情が異なる場合（Aは憧れ、Bは無関心等）は両方向を別エントリで出す
+- notes には関係の補足（いつから・どんな経緯か）を 1 文で書く
+- 素材から確認できない関係を推測で作らない。不確かなら出さない
+
+${COMMON_RULES}`,
+    userPromptTemplate: `【登場人物（id付き）】
+{{characters}}
+
+【素材（プロット/取材メモ）】
+{{interviewNotes}}
+
+【生成済み本文の抜粋】
+{{sectionExcerpts}}
+
+【手動登録済みの関係（参考。これらと重複する関係は出さなくてよい）】
+{{manualRelationships}}
+
+人物相関図のデータを JSON で返してください。`,
+    outputFormat: `{
+  "relationships": [
+    { "fromId": "char-xxxx", "toId": "char-yyyy", "label": "親子", "mutual": true, "notes": "..." },
+    { "fromId": "char-aaaa", "toId": "char-bbbb", "label": "片想い", "mutual": false, "notes": "..." }
+  ]
+}`,
+  },
+  {
     id: "prompt-followup",
     name: "追加質問生成プロンプト",
     description: "取材メモから、次回ヒアリングで聞くべき追加質問を生成する。",
@@ -549,6 +588,7 @@ export const emptyStoryBible: StoryBible = {
   foreshadowingItems: [],
   continuityFacts: [],
   unresolvedQuestions: [],
+  relationships: [],
 };
 
 export const emptyCharacters: NovelCharacter[] = [];
