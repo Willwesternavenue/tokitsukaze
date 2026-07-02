@@ -161,6 +161,61 @@ const READER_EXPERIENCE: AgentDef = {
   }),
 };
 
+// ===== P3: Novel-only reviewers =====
+
+function serializeCharacters(project: Project): string {
+  const chars = project.characters ?? [];
+  if (chars.length === 0) return "（登場人物が未登録です）";
+  return chars
+    .map((c) => {
+      const arc = c.arc
+        ? `arc: start=${c.arc.start}${c.arc.turningPoint ? ` / turn=${c.arc.turningPoint}` : ""}${c.arc.end ? ` / end=${c.arc.end}` : ""}`
+        : "";
+      return [
+        `● ${c.name}（${c.role}）`,
+        c.profile ? `  profile: ${c.profile}` : "",
+        c.desire ? `  desire (欲): ${c.desire}` : "",
+        c.need ? `  need (真に必要): ${c.need}` : "",
+        c.wound ? `  wound: ${c.wound}` : "",
+        c.contradiction ? `  contradiction: ${c.contradiction}` : "",
+        c.voice ? `  voice: ${c.voice}` : "",
+        c.tabooWords?.length ? `  taboo: ${c.tabooWords.join("、")}` : "",
+        arc ? `  ${arc}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+    })
+    .join("\n\n");
+}
+
+const CHARACTER_VOICE: AgentDef = {
+  key: "character-voice",
+  label: "キャラクター",
+  promptId: "prompt-agent-character-voice",
+  buildVars: (ctx) => ({
+    body: ctx.draft.body,
+    characters: serializeCharacters(ctx.project),
+    chapterNumber: String(ctx.chapter?.chapterNumber ?? 0),
+    chapterTitle: ctx.chapter?.title ?? ctx.draft.chapterTitle,
+    sectionTitle: ctx.section?.title ?? ctx.draft.sectionTitle,
+  }),
+};
+
+const TENSION: AgentDef = {
+  key: "tension-checker",
+  label: "緊張感",
+  promptId: "prompt-agent-tension",
+  buildVars: (ctx) => ({
+    body: ctx.draft.body,
+    chapterNumber: String(ctx.chapter?.chapterNumber ?? 0),
+    chapterTitle: ctx.chapter?.title ?? ctx.draft.chapterTitle,
+    sectionTitle: ctx.section?.title ?? ctx.draft.sectionTitle,
+    outlineSummary: ctx.project.selectedOutline
+      ? `${ctx.project.selectedOutline.title}：${ctx.project.selectedOutline.concept}`
+      : "",
+  }),
+};
+
 // ==========================================================
 // Step functions (workflow から並列で呼ばれる)
 // ==========================================================
@@ -195,4 +250,22 @@ export async function readerExperienceStep(
 ): Promise<AgentReportSummary> {
   "use step";
   return runReviewer(READER_EXPERIENCE, ctx, runId);
+}
+
+// ===== P3: novel-only =====
+
+export async function characterVoiceStep(
+  ctx: AgentContext,
+  runId: string,
+): Promise<AgentReportSummary> {
+  "use step";
+  return runReviewer(CHARACTER_VOICE, ctx, runId);
+}
+
+export async function tensionStep(
+  ctx: AgentContext,
+  runId: string,
+): Promise<AgentReportSummary> {
+  "use step";
+  return runReviewer(TENSION, ctx, runId);
 }

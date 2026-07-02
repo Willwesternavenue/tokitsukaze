@@ -91,6 +91,10 @@ export type Project = {
   generatedSections: SectionDraft[];
   createdAt: string;
   updatedAt: string;
+  // ===== P3: Novel-specific =====
+  genre: "biography" | "novel";
+  characters: NovelCharacter[];
+  storyBible: StoryBible;
 };
 
 export type ReviewResult = {
@@ -106,7 +110,10 @@ export type AgentKey =
   | "proofreader"
   | "style-guardian"
   | "consistency-lite"
-  | "reader-experience";
+  | "reader-experience"
+  // P3: novel-only agents
+  | "character-voice"
+  | "tension-checker";
 
 export type AgentSeverity = "info" | "warning" | "error";
 
@@ -125,4 +132,71 @@ export type AgentReportSummary = {
     runId: string;
     parseFailed?: boolean;
   };
+};
+
+// ===== P3: Novel-specific data model =====
+
+export type Genre = "biography" | "novel";
+
+export type CharacterRole = "protagonist" | "antagonist" | "supporting" | "minor";
+
+export type CharacterArc = {
+  start: string;         // 物語開始時の状態
+  turningPoint?: string; // 転機
+  end?: string;          // 物語終了時の状態
+};
+
+export type NovelCharacter = {
+  id: string;
+  name: string;
+  nameReadings?: string;
+  role: CharacterRole;
+  profile: string;         // 客観プロフィール
+  desire: string;          // 表面的に欲しいもの (want)
+  need: string;            // 本当に必要なもの (need)
+  wound?: string;          // 過去の傷
+  contradiction?: string;  // 矛盾・弱点
+  voice: string;           // 口調・語尾・話し方の特徴
+  tabooWords: string[];    // この人物は絶対言わない語
+  arc?: CharacterArc;
+  notes?: string;
+};
+
+export type WorldRule = {
+  id: string;
+  category: string;   // "魔法" | "身分制度" | "地理" | "経済" 等
+  rule: string;
+  exceptions?: string;
+};
+
+export type TimelineEvent = {
+  id: string;
+  when: string;        // "1985年春" | "第2章時点で10年前" 等
+  event: string;
+  involvedCharacters: string[]; // character id[]
+  location?: string;
+};
+
+export type StoryLocation = {
+  id: string;
+  name: string;
+  description?: string;
+};
+
+export type Foreshadow = {
+  id: string;
+  content: string;
+  seededAt?: string;         // "chapterId::sectionId" or free text
+  plannedResolution?: string;
+  resolvedAt?: string;
+  status: "seeded" | "resolved" | "unresolved";
+};
+
+export type StoryBible = {
+  worldRules: WorldRule[];
+  timelineEvents: TimelineEvent[];
+  locations: StoryLocation[];
+  foreshadowingItems: Foreshadow[];
+  continuityFacts: string[];    // "主人公は左利き" 等の細部
+  unresolvedQuestions: string[]; // 読者に残っている疑問
 };

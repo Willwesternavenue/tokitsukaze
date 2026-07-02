@@ -1,6 +1,13 @@
 "use client";
 
-import { defaultPrompts, emptyWritingMemory, sampleInterviewNotes, sampleWritingMemory } from "./samples";
+import {
+  defaultPrompts,
+  emptyCharacters,
+  emptyStoryBible,
+  emptyWritingMemory,
+  sampleInterviewNotes,
+  sampleWritingMemory,
+} from "./samples";
 import type { OutlineProposal, Project, PromptTemplate, SectionDraft, WritingMemory } from "./types";
 import { makeId } from "./ids";
 
@@ -41,10 +48,14 @@ export function newProject(name?: string): Project {
     generatedSections: [],
     createdAt: nowIso(),
     updatedAt: nowIso(),
+    // P3
+    genre: "biography",
+    characters: [],
+    storyBible: { ...emptyStoryBible },
   };
 }
 
-function emptyProject(name: string): Project {
+function emptyProject(name: string, genre: "biography" | "novel" = "biography"): Project {
   return {
     id: makeId("project"),
     name,
@@ -59,6 +70,10 @@ function emptyProject(name: string): Project {
     generatedSections: [],
     createdAt: nowIso(),
     updatedAt: nowIso(),
+    // P3
+    genre,
+    characters: [...emptyCharacters],
+    storyBible: { ...emptyStoryBible },
   };
 }
 
@@ -67,6 +82,10 @@ function mergeDefaults(p: Project): Project {
     ...newProject(),
     ...p,
     writingMemory: { ...emptyWritingMemory, ...(p.writingMemory || {}) },
+    // P3: 既存 v2 プロジェクトに P3 フィールドが無ければ補う
+    genre: (p as any).genre ?? "biography",
+    characters: Array.isArray((p as any).characters) ? (p as any).characters : [],
+    storyBible: { ...emptyStoryBible, ...((p as any).storyBible || {}) },
   };
 }
 
@@ -132,10 +151,16 @@ export function switchProject(id: string): Project {
   return loadProject();
 }
 
-export function createProject(name?: string, opts?: { withSample?: boolean }): Project {
+export function createProject(
+  name?: string,
+  opts?: { withSample?: boolean; genre?: "biography" | "novel" },
+): Project {
   const arr = loadAll();
   const withSample = opts?.withSample ?? false;
-  const p = withSample ? newProject(name) : emptyProject(name ?? "新しいプロジェクト");
+  const genre = opts?.genre ?? "biography";
+  const p = withSample
+    ? { ...newProject(name), genre }
+    : emptyProject(name ?? "新しいプロジェクト", genre);
   arr.push(p);
   saveAll(arr);
   setCurrentProjectIdRaw(p.id);
@@ -279,6 +304,20 @@ export function upsertDraft(draft: SectionDraft): Project {
 
 export function updateWritingMemory(mem: WritingMemory): Project {
   return updateProject((p) => ({ ...p, writingMemory: mem }));
+}
+
+// ===== P3 helpers =====
+
+export function updateGenre(genre: "biography" | "novel"): Project {
+  return updateProject((p) => ({ ...p, genre }));
+}
+
+export function updateCharacters(chars: import("./types").NovelCharacter[]): Project {
+  return updateProject((p) => ({ ...p, characters: chars }));
+}
+
+export function updateStoryBible(bible: import("./types").StoryBible): Project {
+  return updateProject((p) => ({ ...p, storyBible: bible }));
 }
 
 // ===== Prompts (global) =====

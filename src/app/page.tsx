@@ -144,13 +144,41 @@ export default function InterviewNotesPage() {
               />
             </div>
             <div className="field">
-              <label htmlFor="proj-interviewee">取材対象者名</label>
+              <label htmlFor="proj-genre">モード</label>
+              <select
+                id="proj-genre"
+                className="input"
+                value={project.genre ?? "biography"}
+                onChange={(e) => updateField("genre", e.target.value as "biography" | "novel")}
+              >
+                <option value="biography">聞き書き（自伝・人物伝）</option>
+                <option value="novel">小説モード（Character / Story Bible 有効）</option>
+              </select>
+              <p className="help">
+                小説モードに切り替えると、上部ナビに「登場人物」「Story Bible」が現れ、本文生成時に小説専任エージェント (Character Voice / Tension) が追加で走ります。
+              </p>
+            </div>
+          </div>
+          <div className="field-row">
+            <div className="field">
+              <label htmlFor="proj-interviewee">取材対象者名 / 主人公名</label>
               <input
                 id="proj-interviewee"
                 type="text"
                 className="input"
                 value={project.intervieweeName}
                 onChange={(e) => updateField("intervieweeName", e.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="proj-tone">文体の希望</label>
+              <input
+                id="proj-tone"
+                type="text"
+                className="input"
+                value={project.desiredTone}
+                onChange={(e) => updateField("desiredTone", e.target.value)}
+                placeholder="例：落ち着いた人物伝風。誠実で読みやすい語り口。"
               />
             </div>
           </div>
@@ -175,17 +203,6 @@ export default function InterviewNotesPage() {
                 onChange={(e) => updateField("targetReader", e.target.value)}
               />
             </div>
-          </div>
-          <div className="field">
-            <label htmlFor="proj-tone">文体の希望</label>
-            <input
-              id="proj-tone"
-              type="text"
-              className="input"
-              value={project.desiredTone}
-              onChange={(e) => updateField("desiredTone", e.target.value)}
-              placeholder="例：落ち着いた人物伝風。誠実で読みやすい語り口。"
-            />
           </div>
         </div>
       </div>

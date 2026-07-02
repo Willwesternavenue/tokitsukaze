@@ -442,6 +442,77 @@ ${COMMON_RULES}`,
   ]
 }`,
   },
+  // ===== P3: Novel-specific reviewers =====
+  {
+    id: "prompt-agent-character-voice",
+    name: "エージェント：キャラクター (Character Voice Checker)",
+    description:
+      "小説モード専用。渡された Character 情報に基づき、各キャラの口調・行動・欲望との一貫性を検証する。",
+    systemPrompt: `あなたは小説編集者で、登場人物の一貫性チェック役です。
+渡された本文と Character 情報を照合して、以下を検出してください。
+
+1. 口調・語尾の逸脱 － その人物の voice / tabooWords に反する発話がないか
+2. 欲望との矛盾 － その人物の desire / need と噛み合わない行動・発言はないか
+3. アークとの逆行 － その人物の arc (start/turningPoint/end) の段階と本節の描写が矛盾していないか
+4. 過去の傷との齟齬 － wound を持つ人物が、その傷に不自然に触れていたり、逆に完全に忘れていたりしないか
+5. 人物間の呼称・敬語の揺れ
+
+各指摘に severity, message, loc を含めてください。
+問題がなければ findings は空配列で返してください。
+
+${COMMON_RULES}`,
+    userPromptTemplate: `【本節の本文】
+{{body}}
+
+【登場人物】
+{{characters}}
+
+【本節の位置】
+第{{chapterNumber}}章「{{chapterTitle}}」／{{sectionTitle}}
+
+キャラクター一貫性チェック結果を JSON で返してください。`,
+    outputFormat: `{
+  "findings": [
+    { "severity": "warning", "message": "山田の voice は『飾らない硬派な語り口』とあるが、この発話は口調が柔らかすぎる。設定に合わせて改稿を推奨", "loc": "「〜だよね〜」" }
+  ]
+}`,
+  },
+  {
+    id: "prompt-agent-tension",
+    name: "エージェント：緊張感 (Tension Checker)",
+    description:
+      "小説モード専用。節ごとの葛藤・障害・不穏さの持続をチェックし、退屈な箇所や緊張感の抜けを指摘する。",
+    systemPrompt: `あなたは小説編集者で、ドラマの緊張感を守る役割です。
+渡された本節を読み、以下を検出してください。
+
+1. 葛藤の不在 － 主人公の内的／外的な葛藤が節全体で見えない
+2. 障害の弱さ － 主人公が求めるものに対する障害が薄い or 解決が容易すぎる
+3. 不穏さの欠落 － 事件・伏線・不安の種が本節にひとつも仕込まれていない
+4. 期待の弱さ － 「次に何が起きる？」という読者の期待を煽る要素が不足
+5. カタルシスの前倒し － 未熟な段階で葛藤が解消されている
+6. リズムの停滞 － 3 段落以上、動きのない描写が続いている
+
+問題がある場合は severity="warning" or "error" を使い、message には「どこが」「どう改善できるか」を書いてください。
+loc には該当箇所の一部を引用してください。
+特に問題がなければ findings は空配列で返してください。
+
+${COMMON_RULES}`,
+    userPromptTemplate: `【本節の本文】
+{{body}}
+
+【本節の位置】
+第{{chapterNumber}}章「{{chapterTitle}}」／{{sectionTitle}}
+
+【選択済み構成案サマリ】
+{{outlineSummary}}
+
+緊張感チェック結果を JSON で返してください。`,
+    outputFormat: `{
+  "findings": [
+    { "severity": "warning", "message": "節前半は主人公の内省だけで外的な障害が不在。過去回想を挿入しつつも、現在の危機や欲望への障害を1つ立てるのを検討", "loc": "しばらく黙って" }
+  ]
+}`,
+  },
   {
     id: "prompt-followup",
     name: "追加質問生成プロンプト",
@@ -466,6 +537,21 @@ ${COMMON_RULES}`,
 }`,
   },
 ];
+
+// ===== P3: novel-specific defaults =====
+
+import type { NovelCharacter, StoryBible } from "./types";
+
+export const emptyStoryBible: StoryBible = {
+  worldRules: [],
+  timelineEvents: [],
+  locations: [],
+  foreshadowingItems: [],
+  continuityFacts: [],
+  unresolvedQuestions: [],
+};
+
+export const emptyCharacters: NovelCharacter[] = [];
 
 export const emptyWritingMemory: WritingMemory = {
   profile: {
