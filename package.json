@@ -6,22 +6,32 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:studio": "drizzle-kit studio",
+    "workflow:web": "workflow web"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.27.3",
+    "@neondatabase/serverless": "^1.1.0",
+    "@workflow/ai": "^4.1.2",
+    "@workflow/next": "^4.0.11",
     "docx": "^8.5.0",
+    "drizzle-orm": "^0.45.2",
     "file-saver": "^2.0.5",
     "next": "14.2.15",
     "openai": "^4.67.3",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "workflow": "^4.5.0"
   },
   "devDependencies": {
     "@types/file-saver": "^2.0.7",
     "@types/node": "^20.16.10",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.0",
+    "drizzle-kit": "^0.31.10",
     "typescript": "^5.6.2"
   }
 }
