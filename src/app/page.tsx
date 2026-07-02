@@ -98,14 +98,33 @@ export default function InterviewNotesPage() {
     setInfo("現在のプロジェクトをサンプル状態に戻しました。");
   }
 
+  const isNovel = project.genre === "novel";
+  const labels = isNovel
+    ? {
+        h1: "素材入力（小説モード）",
+        subtitle: "書きたい物語のプロット・シーン案・登場人物のアイデアを入力し、章立て案を生成します。",
+        panelTitle: "プロット / 素材メモ",
+        placeholder:
+          "物語のあらすじ、書きたいシーン、主人公の背景、対立構造、テーマなどを自由に入力してください。取材や実話ベースの素材でも構いません。",
+        help: "プロット・設定・シーン案などをまとめて投入できます。この内容と、登場人物 (/characters)・Story Bible (/bible) に登録した情報を合わせて AI が章立て → 本文を組み立てます。",
+        generateButton: "章立て案を生成する",
+      }
+    : {
+        h1: "取材メモ入力",
+        subtitle: "取材で聞いた内容を貼り付け、章立て案を3パターン生成します。",
+        panelTitle: "取材メモ",
+        placeholder:
+          "取材で聞き取った内容を、箇条書き／自由記述どちらでも貼り付けてください。",
+        help: "事実関係のみで構いません。整形・要約はAIが行います。個人を特定する情報は事前にマスキングしてください。長さの目安は 20,000 字以内。40,000 字を超えるとサーバタイムアウト（最大 180 秒）に達する可能性があります。",
+        generateButton: "章立て案を生成する",
+      };
+
   return (
     <>
       <div className="page-header">
         <div>
-          <h1>取材メモ入力</h1>
-          <p className="subtitle">
-            取材で聞いた内容を貼り付け、章立て案を3パターン生成します。
-          </p>
+          <h1>{labels.h1}</h1>
+          <p className="subtitle">{labels.subtitle}</p>
         </div>
         <div className="actions">
           <button className="btn ghost" onClick={handleReset} type="button">
@@ -209,7 +228,7 @@ export default function InterviewNotesPage() {
 
       <div className="panel">
         <div className="panel-header">
-          <h2>取材メモ</h2>
+          <h2>{labels.panelTitle}</h2>
           <span className={`hint ${charCount > 20000 ? "" : ""}`} style={{
             color: charCount > 40000 ? "var(--danger)" : charCount > 20000 ? "var(--warn)" : undefined,
             fontWeight: charCount > 20000 ? 600 : undefined,
@@ -225,13 +244,9 @@ export default function InterviewNotesPage() {
               rows={18}
               value={project.interviewNotes}
               onChange={(e) => updateField("interviewNotes", e.target.value)}
-              placeholder="取材で聞き取った内容を、箇条書き／自由記述どちらでも貼り付けてください。"
+              placeholder={labels.placeholder}
             />
-            <p className="help">
-              事実関係のみで構いません。整形・要約はAIが行います。
-              個人を特定する情報は事前にマスキングしてください。
-              長さの目安は <strong>20,000 字以内</strong>。40,000 字を超えるとサーバタイムアウト（最大 180 秒）に達する可能性があります。
-            </p>
+            <p className="help">{labels.help}</p>
           </div>
         </div>
       </div>
