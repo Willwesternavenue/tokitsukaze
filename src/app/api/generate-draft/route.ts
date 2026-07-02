@@ -28,6 +28,7 @@ export async function POST(req: Request) {
       draft: result.draft,
       parseFailed: result.parseFailed ?? false,
       runId: result.meta.runId,
+      agentReports: result.agentReports ?? [],
     });
   } catch (e) {
     if (e instanceof AIConfigError) {

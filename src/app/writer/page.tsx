@@ -9,7 +9,14 @@ import {
   upsertDraft,
   withStyleRules,
 } from "@/lib/storage";
-import type { Chapter, OutlineProposal, Project, Section, SectionDraft } from "@/lib/types";
+import type {
+  AgentReportSummary,
+  Chapter,
+  OutlineProposal,
+  Project,
+  Section,
+  SectionDraft,
+} from "@/lib/types";
 import { exportProjectDocx, exportSectionDocx } from "@/lib/docx";
 import { postJson } from "@/lib/apiClient";
 
@@ -23,6 +30,9 @@ export default function WriterPage() {
   const [exporting, setExporting] = useState(false);
   const [regenSections, setRegenSections] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // P2: 直近の draft 生成で受け取ったエージェント診断。
+  // (chapterId::sectionId) をキーに保持し、切替時にリセット。
+  const [agentReports, setAgentReports] = useState<Record<string, AgentReportSummary[]>>({});
 
   useEffect(() => {
     const p = loadProject();
@@ -44,6 +54,11 @@ export default function WriterPage() {
     if (!selected) return undefined;
     return draftMap.get(`${selected.chapter.id}::${selected.section.id}`);
   }, [selected, draftMap]);
+
+  const currentAgentReports: AgentReportSummary[] = useMemo(() => {
+    if (!selected) return [];
+    return agentReports[`${selected.chapter.id}::${selected.section.id}`] ?? [];
+  }, [selected, agentReports]);
 
   if (!project) {
     return (
@@ -90,17 +105,24 @@ export default function WriterPage() {
       const prompts = loadPrompts();
       const base = prompts.find((p) => p.id === "prompt-draft");
       const promptTemplate = base ? withStyleRules(base) : undefined;
-      const r = await postJson<{ draft?: SectionDraft }>("/api/generate-draft", {
-        project,
-        chapter: selected.chapter,
-        section: selected.section,
-        promptTemplate,
-      });
+      const r = await postJson<{ draft?: SectionDraft; agentReports?: AgentReportSummary[] }>(
+        "/api/generate-draft",
+        {
+          project,
+          chapter: selected.chapter,
+          section: selected.section,
+          promptTemplate,
+        },
+      );
       if (!r.ok) throw new Error(r.error ?? "本文生成に失敗しました。");
       const draft = r.data?.draft;
       if (!draft) throw new Error("AIから本文が返りませんでした。");
       const next = upsertDraft(draft);
       setProject(next);
+      // P2: エージェント診断結果を保持
+      const reports = r.data?.agentReports ?? [];
+      const key = `${draft.chapterId}::${draft.sectionId}`;
+      setAgentReports((prev) => ({ ...prev, [key]: reports }));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -358,6 +380,66 @@ export default function WriterPage() {
                   )}
                 </div>
               </div>
+
+              {currentDraft && currentAgentReports.length > 0 ? (
+                <div className="panel">
+                  <div className="panel-header">
+                    <h2>AI編集チーム診断</h2>
+                    <span className="hint">
+                      本文生成と同時に 4 役のエージェントが並列でチェックしました
+                    </span>
+                  </div>
+                  <div className="panel-body">
+                    <div className="agent-badge-row">
+                      {currentAgentReports.map((r) => {
+                        const total = r.findings.length;
+                        const sev = r.findings.some((f) => f.severity === "error")
+                          ? "danger"
+                          : r.findings.some((f) => f.severity === "warning")
+                            ? "warn"
+                            : total > 0
+                              ? "gray"
+                              : "success";
+                        return (
+                          <span key={r.agent} className={`badge ${sev}`} title={r.agent}>
+                            {r.label} · {total} 件
+                          </span>
+                        );
+                      })}
+                    </div>
+                    <hr className="sep" />
+                    <div className="grid grid-2">
+                      {currentAgentReports.map((r) => (
+                        <div key={r.agent} className="agent-detail-card">
+                          <div className="agent-detail-header">
+                            <strong>{r.label}</strong>
+                            <span className="muted" style={{ fontSize: 11 }}>
+                              {r.meta.parseFailed
+                                ? "AI応答をパースできず"
+                                : `${r.findings.length}件`}
+                            </span>
+                          </div>
+                          <ul className="list-block">
+                            {r.findings.length === 0 && !r.meta.parseFailed ? (
+                              <li className="muted" style={{ fontSize: 11 }}>
+                                指摘なし
+                              </li>
+                            ) : null}
+                            {r.findings.map((f, i) => (
+                              <li key={i} className={`finding severity-${f.severity}`}>
+                                <div className="finding-message">{f.message}</div>
+                                {f.loc ? (
+                                  <div className="finding-loc">「{f.loc}」</div>
+                                ) : null}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
               {currentDraft ? (
                 <div className="grid grid-2">

@@ -795,3 +795,76 @@ hr.sep {
   border-top: 1px solid var(--border);
   margin: 16px 0;
 }
+
+/* ===== P2: Agent diagnostics ===== */
+.agent-badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.agent-badge-row .badge {
+  font-size: 11px;
+  padding: 4px 10px;
+}
+.agent-detail-card {
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 10px 12px;
+}
+.agent-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px dashed var(--border);
+}
+.agent-detail-card .list-block {
+  background: transparent;
+}
+.agent-detail-card .list-block li {
+  padding: 6px 0;
+  border-top: 1px dashed var(--border);
+  font-size: 12px;
+}
+.agent-detail-card .list-block li:first-child {
+  border-top: none;
+}
+.finding {
+  position: relative;
+  padding-left: 10px !important;
+}
+.finding::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  width: 3px;
+  height: calc(100% - 12px);
+  border-radius: 2px;
+}
+.finding.severity-info::before {
+  background: var(--text-muted);
+}
+.finding.severity-warning::before {
+  background: var(--warn);
+}
+.finding.severity-error::before {
+  background: var(--danger);
+}
+.finding-message {
+  color: var(--text);
+  line-height: 1.55;
+}
+.finding-loc {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--mono);
+  background: rgba(0, 0, 0, 0.03);
+  padding: 3px 6px;
+  border-radius: 2px;
+  display: inline-block;
+}

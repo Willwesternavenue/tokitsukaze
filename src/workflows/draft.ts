@@ -1,11 +1,24 @@
 import { getWorkflowMetadata } from "workflow";
-import type { Chapter, Project, PromptTemplate, Section, SectionDraft } from "@/lib/types";
+import type {
+  AgentReportSummary,
+  Chapter,
+  Project,
+  PromptTemplate,
+  Section,
+  SectionDraft,
+} from "@/lib/types";
 import { defaultPrompts } from "@/lib/samples";
 import { renderTemplate } from "@/lib/promptVars";
 import { safeJsonParse } from "@/lib/json";
 import { makeId } from "@/lib/ids";
 import { runAiStep } from "./shared";
-import { saveProjectSnapshot, saveSectionDraft } from "@/db/queries";
+import { saveAgentReport, saveProjectSnapshot, saveSectionDraft } from "@/db/queries";
+import {
+  consistencyLiteStep,
+  proofreaderStep,
+  readerExperienceStep,
+  styleGuardianStep,
+} from "./agents/reviewers";
 
 export type DraftWorkflowInput = {
   project: Project;
@@ -18,26 +31,50 @@ export type DraftWorkflowResult = {
   ok: boolean;
   draft: SectionDraft;
   parseFailed?: boolean;
+  agentReports: AgentReportSummary[];
   meta: { model: string; provider: string; attempts: number; runId: string };
 };
 
 export async function draftWorkflow(input: DraftWorkflowInput): Promise<DraftWorkflowResult> {
   "use workflow";
   const runId = getWorkflowMetadata().workflowRunId;
+
+  // 1. 本文生成 (既存)
   const result = await draftStep(input, runId);
-  // 生成成功時のみ DB に永続化 (DB 未設定なら no-op)
-  // sections.project_id は projects.id への FK なので、先に project を upsert してから section を保存する
-  await persistDraftStep(input.project, result.draft, {
+
+  // 2. 本文が成功した時だけ 4 エージェントを並列実行
+  //    (失敗時のフォールバック本文にレビューをかけても意味がないので skip)
+  let agentReports: AgentReportSummary[] = [];
+  if (result.ok) {
+    const ctx = {
+      draft: result.draft,
+      project: input.project,
+      chapter: input.chapter,
+      section: input.section,
+    };
+    // 各 step は個別 "use step"、並列実行。
+    // reviewer 内部で失敗を吸収するので Promise.all が reject しない設計にしてある。
+    agentReports = await Promise.all([
+      proofreaderStep(ctx, runId),
+      styleGuardianStep(ctx, runId),
+      consistencyLiteStep(ctx, runId),
+      readerExperienceStep(ctx, runId),
+    ]);
+  }
+
+  // 3. 全部まとめて永続化 (DB 未設定なら no-op)
+  await persistAllStep(input.project, result.draft, agentReports, {
     runId: result.meta.runId,
     model: result.meta.model,
   });
-  return result;
+
+  return { ...result, agentReports };
 }
 
 async function draftStep(
   input: DraftWorkflowInput,
   runId: string,
-): Promise<DraftWorkflowResult> {
+): Promise<Omit<DraftWorkflowResult, "agentReports">> {
   "use step";
 
   const { project, chapter, section } = input;
@@ -130,9 +167,10 @@ async function draftStep(
   };
 }
 
-async function persistDraftStep(
+async function persistAllStep(
   project: Project,
   draft: SectionDraft,
+  reports: AgentReportSummary[],
   meta: { runId: string; model: string },
 ): Promise<void> {
   "use step";
@@ -144,6 +182,30 @@ async function persistDraftStep(
     model: meta.model,
     promptVersion: null,
   });
+  // 3. 4 エージェントの findings を agent_reports に保存
+  for (const r of reports) {
+    if (r.findings.length === 0 && !r.meta.parseFailed) continue; // 指摘なしの成功はログのみで済ませる
+    await saveAgentReport({
+      projectId: project.id,
+      agent: r.agent,
+      targetType: "section",
+      targetId: draft.id,
+      severity: aggregateSeverity(r.findings),
+      findings: r.findings,
+      runId: r.meta.runId,
+      model: r.meta.model,
+      promptVersion: null,
+    });
+  }
+}
+
+function aggregateSeverity(
+  findings: AgentReportSummary["findings"],
+): "info" | "warning" | "error" | undefined {
+  if (findings.some((f) => f.severity === "error")) return "error";
+  if (findings.some((f) => f.severity === "warning")) return "warning";
+  if (findings.some((f) => f.severity === "info")) return "info";
+  return undefined;
 }
 
 function strArr(raw: unknown): string[] {

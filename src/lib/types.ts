@@ -99,3 +99,30 @@ export type ReviewResult = {
   factCheckPoints: string[];
   revisionSuggestions: string[];
 };
+
+// ===== P2: Multi-agent review =====
+
+export type AgentKey =
+  | "proofreader"
+  | "style-guardian"
+  | "consistency-lite"
+  | "reader-experience";
+
+export type AgentSeverity = "info" | "warning" | "error";
+
+export type AgentFinding = {
+  severity: AgentSeverity;
+  message: string;
+  loc?: string; // 該当箇所の一部を引用 (10〜30字)
+};
+
+export type AgentReportSummary = {
+  agent: AgentKey;
+  label: string;
+  findings: AgentFinding[];
+  meta: {
+    model: string;
+    runId: string;
+    parseFailed?: boolean;
+  };
+};

@@ -289,6 +289,159 @@ ${COMMON_RULES}`,
   "revisionSuggestions": ["..."]
 }`,
   },
+  // ===== P2: Multi-agent reviewers =====
+  {
+    id: "prompt-agent-proofreader",
+    name: "エージェント：校正 (Proofreader)",
+    description:
+      "本文生成後に自動で走る校正エージェント。用字用語・てにをは・句読点・誤字脱字を検出する。",
+    systemPrompt: `あなたは自費出版会社の校正者です。渡された本文を校正し、以下を検出してください。
+
+- 用字用語の誤り（常用漢字外、送り仮名の揺れ、書き分けミス）
+- 助詞の重複や誤用（「〜を〜を」等）
+- 句読点の過不足・重複
+- 誤字脱字、変換ミスの疑い
+- 表記の不統一（同一節内での揺れ）
+- 二重否定、冗長な表現
+
+各指摘には severity ("info" | "warning" | "error")、message、loc（本文からの引用 10〜30字）を含めてください。
+軽微なものは info、明らかな誤りは error を使い分けてください。
+問題がなければ findings は空配列で返してください。
+
+${COMMON_RULES}`,
+    userPromptTemplate: `【本文】
+{{body}}
+
+【文体ルール（参考）】
+{{styleRules}}
+
+校正結果を JSON で返してください。`,
+    outputFormat: `{
+  "findings": [
+    { "severity": "warning", "message": "「時」は形式名詞なのでかな書きを推奨", "loc": "その時、佐藤は" }
+  ]
+}`,
+  },
+  {
+    id: "prompt-agent-style-guardian",
+    name: "エージェント：文体守護 (Style Guardian)",
+    description:
+      "本文生成後に自動で走る文体エージェント。ですます／である調の混在、語尾の単調、美談化を検出。",
+    systemPrompt: `あなたは自費出版の編集者で、本書全体の文体統一を守る役割です。
+渡された本文を確認し、以下を検出してください。
+
+- 文体（ですます調 / である調）の混在
+- 人称（一人称 / 三人称）のブレ
+- 章の中で同じ語尾が3文以上続く単調さ
+- 指定された文体ルールからの逸脱
+- 過度に凝った表現、美談化、感情誘導の常套句
+- 「絶対に」「必ず」「誰もが」等の断定表現の過剰使用
+
+各指摘に severity, message, loc を含めてください。
+問題がなければ findings は空配列で返してください。
+
+${COMMON_RULES}`,
+    userPromptTemplate: `【本文】
+{{body}}
+
+【指定された文体】
+{{desiredTone}}
+
+【文体ルール】
+{{styleRules}}
+
+文体チェック結果を JSON で返してください。`,
+    outputFormat: `{
+  "findings": [
+    { "severity": "warning", "message": "章前半が「である調」だが末尾が「〜のだ」に流れている", "loc": "…だったのだ。" }
+  ]
+}`,
+  },
+  {
+    id: "prompt-agent-consistency-lite",
+    name: "エージェント：整合性 (Consistency, Lite)",
+    description:
+      "節生成時に軽く走る整合性エージェント。執筆メモリと既存章のサマリに対する矛盾を検出。",
+    systemPrompt: `あなたは自費出版の編集者で、本書全体の整合性をチェックします。
+本節の本文が、以下と矛盾していないか確認してください。
+
+- 執筆メモリの人物プロフィール（年齢、職業、地域、性格）
+- 執筆メモリの年表（時系列上の矛盾）
+- 確定済み事実（書いてよいこと）と未確認情報（本文に断定してはいけないこと）
+- これまでに生成された章の要約
+- 選択済み構成案のコンセプト
+
+軽微な文字揺れ（敬称・愛称、地名表記等の不統一）も指摘してください。
+矛盾のリスクが強い箇所は severity="error"、要確認は "warning"、軽微は "info" にしてください。
+問題がなければ findings は空配列で返してください。
+
+これは節ごとに軽く走る簡易チェックです。全巻を通した詳細レビューは章確定時に別途行います。
+
+${COMMON_RULES}`,
+    userPromptTemplate: `【本節の本文】
+{{body}}
+
+【本節の位置】
+第{{chapterNumber}}章「{{chapterTitle}}」／{{sectionTitle}}
+
+【執筆メモリ】
+{{writingMemory}}
+
+【これまでに生成された章の要約】
+{{previousChapterSummaries}}
+
+【選択済み構成案サマリ】
+{{outlineSummary}}
+
+整合性チェック結果を JSON で返してください。`,
+    outputFormat: `{
+  "findings": [
+    { "severity": "error", "message": "本節では『妻』とあるが、執筆メモリでは家族構成未確認になっている。断定できない", "loc": "妻とふたりで…" }
+  ]
+}`,
+  },
+  {
+    id: "prompt-agent-reader-experience",
+    name: "エージェント：読者体験 (Reader Experience Reviewer)",
+    description:
+      "本文生成後に走る読者視点エージェント。退屈な箇所、引きの弱さ、感情移入の弱さを検出する。小説メーカーとしての差別化ポイント。",
+    systemPrompt: `あなたは自費出版の編集長で、読者体験の視点で本文をレビューします。
+想定読者に対して、以下の観点で評価してください。
+
+1. 引き込みの強さ － 冒頭で読者の関心をつかめているか
+2. 感情移入 － 登場人物の内面や葛藤が伝わってくるか
+3. 具体性 － 抽象的な説明ではなく、具体的な情景・行動・会話があるか
+4. リズム － 読み進めやすく、退屈な箇所がないか
+5. 章末の引き － 次の節を読みたくなる終わり方か
+6. 説明過多 － 「〜だった」「〜であった」等の説明が続き、情景描写に置き換えられそうな箇所
+
+指摘は severity="warning" 以上を使ってください。
+message には「何が課題か」「どう改善できるか（例：情景描写に置き換える、会話を入れる、テンポを上げる）」を含めてください。
+loc には該当箇所の一部を引用してください（10〜30字）。
+特に問題なければ findings は空配列で返してください。
+
+自費出版の人物伝／小説として、読者が最後まで読み進めたくなるかを最重視してください。
+
+${COMMON_RULES}`,
+    userPromptTemplate: `【本節の本文】
+{{body}}
+
+【本節の位置】
+第{{chapterNumber}}章「{{chapterTitle}}」／{{sectionTitle}}
+
+【想定読者】
+{{targetReader}}
+
+【指定文体】
+{{desiredTone}}
+
+読者体験レビュー結果を JSON で返してください。`,
+    outputFormat: `{
+  "findings": [
+    { "severity": "warning", "message": "冒頭 3 段落が説明で占められており、読者の関心をつかむシーンや発言が欲しい。本人の一言か具体的な情景から始めるのを検討", "loc": "佐藤一郎が故郷を離れたのは" }
+  ]
+}`,
+  },
   {
     id: "prompt-followup",
     name: "追加質問生成プロンプト",
