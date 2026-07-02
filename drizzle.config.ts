@@ -1,4 +1,9 @@
 import type { Config } from "drizzle-kit";
+import { config } from "dotenv";
+
+// drizzle-kit は Next.js と違い .env.local を自動で読まないので、明示的にロードする
+config({ path: ".env.local" });
+config({ path: ".env" });
 
 /**
  * Neon Postgres 用の Drizzle 設定。
