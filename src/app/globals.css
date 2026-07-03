@@ -225,9 +225,12 @@ textarea {
   background: #fff;
   border-bottom: 1px solid var(--border);
   display: flex;
+  flex-wrap: wrap;
   padding: 0 24px;
   gap: 4px;
-  overflow-x: auto;
+  /* overflow-x: auto を使うと、絶対配置のドロップダウン (ナレッジ▾) が
+     クリップされて見えなくなるため、折り返しで対応する */
+  position: relative;
 }
 
 .nav a {
