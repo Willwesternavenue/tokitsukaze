@@ -161,6 +161,19 @@ const READER_EXPERIENCE: AgentDef = {
   }),
 };
 
+// ===== 聞き書き用: 校閲（事実確認） =====
+
+const FACT_CHECK: AgentDef = {
+  key: "fact-check",
+  label: "校閲",
+  promptId: "prompt-agent-fact-check",
+  buildVars: (ctx) => ({
+    body: ctx.draft.body,
+    interviewNotes: (ctx.project.interviewNotes ?? "").slice(0, 8000),
+    writingMemory: JSON.stringify(ctx.project.writingMemory ?? {}, null, 2),
+  }),
+};
+
 // ===== P3: Novel-only reviewers =====
 
 function serializeCharacters(project: Project): string {
@@ -250,6 +263,14 @@ export async function readerExperienceStep(
 ): Promise<AgentReportSummary> {
   "use step";
   return runReviewer(READER_EXPERIENCE, ctx, runId);
+}
+
+export async function factCheckStep(
+  ctx: AgentContext,
+  runId: string,
+): Promise<AgentReportSummary> {
+  "use step";
+  return runReviewer(FACT_CHECK, ctx, runId);
 }
 
 // ===== P3: novel-only =====

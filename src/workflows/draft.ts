@@ -16,6 +16,7 @@ import { saveAgentReport, saveProjectSnapshot, saveSectionDraft } from "@/db/que
 import {
   characterVoiceStep,
   consistencyLiteStep,
+  factCheckStep,
   proofreaderStep,
   readerExperienceStep,
   styleGuardianStep,
@@ -67,6 +68,11 @@ export async function draftWorkflow(input: DraftWorkflowInput): Promise<DraftWor
     if (input.project.genre === "novel") {
       if (enabled("character-voice")) steps.push(characterVoiceStep(ctx, runId));
       if (enabled("tension-checker")) steps.push(tensionStep(ctx, runId));
+    }
+    // 聞き書き (実話ベース) なら校閲 (事実確認) を追加。
+    // 創作の小説モードでは不要。将来ビジネス書・実用書モードでも有効化する
+    if (input.project.genre === "biography") {
+      if (enabled("fact-check")) steps.push(factCheckStep(ctx, runId));
     }
     agentReports = await Promise.all(steps);
   }

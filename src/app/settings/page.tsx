@@ -14,6 +14,7 @@ import {
 } from "@/lib/storage";
 import { exportProjectToJson, importProjectFromFile } from "@/lib/projectIO";
 import { allGenres, getGenreConfig } from "@/lib/genreConfig";
+import { plannedGenres } from "@/lib/staffRegistry";
 import type { Genre, Project } from "@/lib/types";
 import { useRef } from "react";
 
@@ -146,6 +147,21 @@ export default function SettingsPage() {
                 モードによってワークフローのラベル・ナレッジ項目・自動実行されるAIスタッフが切り替わります。
               </p>
             </div>
+          </div>
+          <hr className="sep" />
+          <div>
+            <div className="field-label">今後のモード（ロードマップ）</div>
+            <ul className="list-block" style={{ border: "1px solid var(--border)", borderRadius: 3 }}>
+              {plannedGenres.map((g) => (
+                <li key={g.label} className="flex" style={{ gap: 10 }}>
+                  <span className={`badge ${g.status === "next" ? "" : "gray"}`}>
+                    {g.status === "next" ? "次期対応" : "検討中"}
+                  </span>
+                  <strong style={{ fontSize: 12 }}>{g.label}</strong>
+                  <span className="muted" style={{ fontSize: 11 }}>{g.note}</span>
+                </li>
+              ))}
+            </ul>
           </div>
         </div>
       </div>

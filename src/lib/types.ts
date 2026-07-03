@@ -118,7 +118,9 @@ export type AgentKey =
   | "reader-experience"
   // P3: novel-only agents
   | "character-voice"
-  | "tension-checker";
+  | "tension-checker"
+  // 聞き書き (将来: ビジネス書・実用書) 用の事実確認
+  | "fact-check";
 
 export type AgentSeverity = "info" | "warning" | "error";
 

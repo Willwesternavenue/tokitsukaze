@@ -134,6 +134,17 @@ export const staffRegistry: StaffMeta[] = [
     agentKey: "reader-experience",
   },
   {
+    promptId: "prompt-agent-fact-check",
+    staffLabel: "校閲（事実確認）",
+    group: "review",
+    kind: "staff",
+    description:
+      "本文中の事実主張を素材・一般知識と照合し、誤り・時代考証の違和感・要出典を検出します。実話ベースの原稿に必須。",
+    runsWhen: "本文生成後に自動実行（聞き書きモードのみ。創作の小説では実行されない）",
+    genres: ["biography"],
+    agentKey: "fact-check",
+  },
+  {
     promptId: "prompt-agent-character-voice",
     staffLabel: "キャラクター整合性",
     group: "review",
@@ -171,9 +182,22 @@ export const staffRegistry: StaffMeta[] = [
 export const plannedRiskStaff: { label: string; genres: string }[] = [
   { label: "プライバシーリスク", genres: "小説（実話ベース）" },
   { label: "名誉毀損リスク", genres: "小説（実話ベース）" },
+  { label: "論理構成チェック", genres: "ビジネス書" },
   { label: "出典チェック", genres: "ビジネス書" },
+  { label: "フォーマットチェック", genres: "脚本（柱・ト書き・セリフ）" },
+  { label: "尺・テンポチェック", genres: "脚本（映画・ドラマ・舞台）" },
+  { label: "手順検証", genres: "実用書" },
   { label: "簡易査読", genres: "論文" },
   { label: "SEOチェック", genres: "ブログ・記事" },
+];
+
+/** 検討中・開発予定のモード。設定画面などのロードマップ表示用 */
+export const plannedGenres: { label: string; status: "next" | "candidate"; note: string }[] = [
+  { label: "ビジネス書", status: "next", note: "取材・リサーチから論理構成で執筆。校閲・出典チェック必須" },
+  { label: "脚本", status: "next", note: "ハリウッドスタイルの柱 (INT/EXT)・ト書きベース。尺の管理。映画/ドラマ/舞台対応" },
+  { label: "実用書", status: "candidate", note: "ハウツー・手順解説。手順の検証エージェントを検討" },
+  { label: "ブログ・記事", status: "candidate", note: "SEO・見出し構成・ファクトチェック" },
+  { label: "論文", status: "candidate", note: "IMRaD構成・日英翻訳・簡易査読" },
 ];
 
 export function staffForGenre(genre: Genre): StaffMeta[] {
