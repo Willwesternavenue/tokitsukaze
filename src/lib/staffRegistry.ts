@@ -42,7 +42,16 @@ export const staffRegistry: StaffMeta[] = [
     kind: "staff",
     description: "素材から章立て・構成案を3案提案します。",
     runsWhen: "「章立て案を生成する」実行時",
-    genres: "common",
+    genres: ["biography", "novel"],
+  },
+  {
+    promptId: "prompt-outline-business",
+    staffLabel: "構成案プランナー（ビジネス書）",
+    group: "planning",
+    kind: "staff",
+    description: "読者課題起点／フレームワーク／ストーリーの3方向で章立てを提案します。",
+    runsWhen: "「章立て案を生成する」実行時（ビジネス書モード）",
+    genres: ["business"],
   },
   {
     promptId: "prompt-sections",
@@ -51,7 +60,16 @@ export const staffRegistry: StaffMeta[] = [
     kind: "staff",
     description: "選択した構成案の各章に小見出し／シーンを展開します。",
     runsWhen: "構成案の選択時・小見出し再生成時",
-    genres: "common",
+    genres: ["biography", "novel"],
+  },
+  {
+    promptId: "prompt-sections-business",
+    staffLabel: "節構成担当（ビジネス書）",
+    group: "planning",
+    kind: "staff",
+    description: "各章に「主張→根拠→事例→まとめ」を意識した節を展開します。",
+    runsWhen: "構成案の選択時・節再生成時（ビジネス書モード）",
+    genres: ["business"],
   },
   {
     promptId: "prompt-followup",
@@ -80,7 +98,16 @@ export const staffRegistry: StaffMeta[] = [
     kind: "staff",
     description: "節／シーン単位で本文を執筆します。ナレッジとルールブックを参照します。",
     runsWhen: "「本文を生成」実行時",
-    genres: "common",
+    genres: ["biography", "novel"],
+  },
+  {
+    promptId: "prompt-draft-business",
+    staffLabel: "本文ライター（ビジネス書）",
+    group: "writing",
+    kind: "staff",
+    description: "「主張→根拠→事例→まとめ」の結論ファースト構造で本文を執筆します。参考文献・用語集を参照します。",
+    runsWhen: "「本文を生成」実行時（ビジネス書モード）",
+    genres: ["business"],
   },
 
   // ===== レビュースタッフ =====
@@ -140,9 +167,29 @@ export const staffRegistry: StaffMeta[] = [
     kind: "staff",
     description:
       "本文中の事実主張を素材・一般知識と照合し、誤り・時代考証の違和感・要出典を検出します。実話ベースの原稿に必須。",
-    runsWhen: "本文生成後に自動実行（聞き書きモードのみ。創作の小説では実行されない）",
-    genres: ["biography"],
+    runsWhen: "本文生成後に自動実行（聞き書き・ビジネス書モード。創作の小説では実行されない）",
+    genres: ["biography", "business"],
     agentKey: "fact-check",
+  },
+  {
+    promptId: "prompt-agent-logic",
+    staffLabel: "論理構成チェック",
+    group: "review",
+    kind: "staff",
+    description: "主張と根拠の対応、論理の飛躍、循環論法、過度な一般化を検出します。",
+    runsWhen: "本文生成後に自動実行（ビジネス書モードのみ）",
+    genres: ["business"],
+    agentKey: "logic-check",
+  },
+  {
+    promptId: "prompt-agent-citation",
+    staffLabel: "出典チェック",
+    group: "review",
+    kind: "staff",
+    description: "出典が必要な主張を検出し、参考文献ナレッジとの紐付け状況を確認します。",
+    runsWhen: "本文生成後に自動実行（ビジネス書モードのみ）",
+    genres: ["business"],
+    agentKey: "citation-check",
   },
   {
     promptId: "prompt-agent-character-voice",
@@ -182,8 +229,6 @@ export const staffRegistry: StaffMeta[] = [
 export const plannedRiskStaff: { label: string; genres: string }[] = [
   { label: "プライバシーリスク", genres: "小説（実話ベース）" },
   { label: "名誉毀損リスク", genres: "小説（実話ベース）" },
-  { label: "論理構成チェック", genres: "ビジネス書" },
-  { label: "出典チェック", genres: "ビジネス書" },
   { label: "フォーマットチェック", genres: "脚本（柱・ト書き・セリフ）" },
   { label: "尺・テンポチェック", genres: "脚本（映画・ドラマ・舞台）" },
   { label: "手順検証", genres: "実用書" },
@@ -193,7 +238,6 @@ export const plannedRiskStaff: { label: string; genres: string }[] = [
 
 /** 検討中・開発予定のモード。設定画面などのロードマップ表示用 */
 export const plannedGenres: { label: string; status: "next" | "candidate"; note: string }[] = [
-  { label: "ビジネス書", status: "next", note: "取材・リサーチから論理構成で執筆。校閲・出典チェック必須" },
   { label: "脚本", status: "next", note: "ハリウッドスタイルの柱 (INT/EXT)・ト書きベース。尺の管理。映画/ドラマ/舞台対応" },
   { label: "実用書", status: "candidate", note: "ハウツー・手順解説。手順の検証エージェントを検討" },
   { label: "ブログ・記事", status: "candidate", note: "SEO・見出し構成・ファクトチェック" },

@@ -43,7 +43,8 @@ export default function WriterPage() {
     }
   }, []);
 
-  const writingTitle = getGenreConfig(project?.genre).stages.writing.pageTitle;
+  const genreCfg = getGenreConfig(project?.genre);
+  const writingTitle = genreCfg.stages.writing.pageTitle;
 
   const draftMap = useMemo(() => {
     const m = new Map<string, SectionDraft>();
@@ -102,7 +103,7 @@ export default function WriterPage() {
     setLoading(true);
     try {
       const prompts = loadPrompts();
-      const base = prompts.find((p) => p.id === "prompt-draft");
+      const base = prompts.find((p) => p.id === genreCfg.pipelinePrompts.draft);
       const promptTemplate = base ? withStyleRules(base) : undefined;
       const r = await postJson<{ draft?: SectionDraft; agentReports?: AgentReportSummary[] }>(
         "/api/generate-draft",
@@ -185,6 +186,7 @@ export default function WriterPage() {
           selectedOutline: cleared,
           interviewNotes: project.interviewNotes,
           writingMemory: project.writingMemory,
+          genre: project.genre,
         },
       );
       if (!r.ok) throw new Error(r.error ?? "小見出しの生成に失敗しました。");

@@ -54,10 +54,12 @@ export function newProject(name?: string): Project {
     storyBible: { ...emptyStoryBible },
     agentToggles: {},
     sectionAgentReports: {},
+    references: [],
+    glossary: [],
   };
 }
 
-function emptyProject(name: string, genre: "biography" | "novel" = "biography"): Project {
+function emptyProject(name: string, genre: import("./types").Genre = "biography"): Project {
   return {
     id: makeId("project"),
     name,
@@ -78,6 +80,8 @@ function emptyProject(name: string, genre: "biography" | "novel" = "biography"):
     storyBible: { ...emptyStoryBible },
     agentToggles: {},
     sectionAgentReports: {},
+    references: [],
+    glossary: [],
   };
 }
 
@@ -92,6 +96,8 @@ function mergeDefaults(p: Project): Project {
     storyBible: { ...emptyStoryBible, ...((p as any).storyBible || {}) },
     agentToggles: { ...((p as any).agentToggles || {}) },
     sectionAgentReports: { ...((p as any).sectionAgentReports || {}) },
+    references: Array.isArray((p as any).references) ? (p as any).references : [],
+    glossary: Array.isArray((p as any).glossary) ? (p as any).glossary : [],
   };
 }
 
@@ -159,7 +165,7 @@ export function switchProject(id: string): Project {
 
 export function createProject(
   name?: string,
-  opts?: { withSample?: boolean; genre?: "biography" | "novel" },
+  opts?: { withSample?: boolean; genre?: import("./types").Genre },
 ): Project {
   const arr = loadAll();
   const withSample = opts?.withSample ?? false;
@@ -314,7 +320,7 @@ export function updateWritingMemory(mem: WritingMemory): Project {
 
 // ===== P3 helpers =====
 
-export function updateGenre(genre: "biography" | "novel"): Project {
+export function updateGenre(genre: import("./types").Genre): Project {
   return updateProject((p) => ({ ...p, genre }));
 }
 
@@ -346,6 +352,16 @@ export function saveSectionAgentReports(
     ...p,
     sectionAgentReports: { ...(p.sectionAgentReports ?? {}), [sectionKey]: reports },
   }));
+}
+
+// ===== ビジネス書: 参考文献・用語集 =====
+
+export function updateReferences(refs: import("./types").Reference[]): Project {
+  return updateProject((p) => ({ ...p, references: refs }));
+}
+
+export function updateGlossary(terms: import("./types").GlossaryTerm[]): Project {
+  return updateProject((p) => ({ ...p, glossary: terms }));
 }
 
 // ===== Prompts (global) =====

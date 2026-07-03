@@ -14,7 +14,7 @@ import { postJson } from "@/lib/apiClient";
 import { getGenreConfig } from "@/lib/genreConfig";
 import type { OutlineProposal, Project } from "@/lib/types";
 
-const TYPE_LABEL: Record<OutlineProposal["type"], string> = {
+const DEFAULT_TYPE_LABEL: Record<OutlineProposal["type"], string> = {
   chronological: "時系列型",
   thematic: "テーマ型",
   narrative: "人物伝・読み物型",
@@ -31,7 +31,9 @@ export default function OutlinePage() {
     setProject(loadProject());
   }, []);
 
-  const structureTitle = getGenreConfig(project?.genre).stages.structure.pageTitle;
+  const genreCfg = getGenreConfig(project?.genre);
+  const structureTitle = genreCfg.stages.structure.pageTitle;
+  const typeLabel = genreCfg.outlineTypeLabels ?? DEFAULT_TYPE_LABEL;
 
   if (!project) {
     return (
@@ -53,7 +55,7 @@ export default function OutlinePage() {
     setLoading(true);
     try {
       const prompts = loadPrompts();
-      const promptTemplate = prompts.find((p) => p.id === "prompt-outline");
+      const promptTemplate = prompts.find((p) => p.id === genreCfg.pipelinePrompts.outline);
       const r = await postJson<{ proposals?: OutlineProposal[] }>("/api/generate-outline", {
         projectName: project.name,
         intervieweeName: project.intervieweeName,
@@ -101,6 +103,7 @@ export default function OutlinePage() {
             selectedOutline: next.selectedOutline,
             interviewNotes: next.interviewNotes,
             writingMemory: next.writingMemory,
+            genre: next.genre,
           },
         );
         if (!r.ok) throw new Error(r.error ?? "小見出しの生成に失敗しました。");
@@ -177,7 +180,7 @@ export default function OutlinePage() {
                 <div className="panel-header">
                   <div className="flex" style={{ gap: 8 }}>
                     <span className="badge">構成案 {String.fromCharCode(65 + idx)}</span>
-                    <span className="badge gray">{TYPE_LABEL[p.type] ?? p.type}</span>
+                    <span className="badge gray">{typeLabel[p.type] ?? p.type}</span>
                   </div>
                   <h2 style={{ marginTop: 4 }}>{p.title}</h2>
                 </div>

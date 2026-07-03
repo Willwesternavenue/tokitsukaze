@@ -92,9 +92,12 @@ export type Project = {
   createdAt: string;
   updatedAt: string;
   // ===== P3: Novel-specific =====
-  genre: "biography" | "novel";
+  genre: Genre;
   characters: NovelCharacter[];
   storyBible: StoryBible;
+  // ===== ビジネス書 =====
+  references: Reference[];
+  glossary: GlossaryTerm[];
   // ===== Nav 再構成: AIスタッフのトグルと診断結果の永続化 =====
   /** 自動レビュアーの有効/無効。未設定キーは有効扱い */
   agentToggles?: Partial<Record<AgentKey, boolean>>;
@@ -119,8 +122,11 @@ export type AgentKey =
   // P3: novel-only agents
   | "character-voice"
   | "tension-checker"
-  // 聞き書き (将来: ビジネス書・実用書) 用の事実確認
-  | "fact-check";
+  // 聞き書き・ビジネス書用の事実確認
+  | "fact-check"
+  // ビジネス書専用
+  | "logic-check"
+  | "citation-check";
 
 export type AgentSeverity = "info" | "warning" | "error";
 
@@ -143,7 +149,25 @@ export type AgentReportSummary = {
 
 // ===== P3: Novel-specific data model =====
 
-export type Genre = "biography" | "novel";
+export type Genre = "biography" | "novel" | "business";
+
+// ===== ビジネス書: 参考文献・用語集 =====
+
+export type Reference = {
+  id: string;
+  title: string;
+  author?: string;
+  source?: string;   // 出版社・掲載誌・サイト名
+  year?: string;
+  url?: string;
+  notes?: string;    // どの主張の裏付けに使うか等
+};
+
+export type GlossaryTerm = {
+  id: string;
+  term: string;
+  definition: string;
+};
 
 export type CharacterRole = "protagonist" | "antagonist" | "supporting" | "minor";
 

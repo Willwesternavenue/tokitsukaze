@@ -1,5 +1,5 @@
 import { getWorkflowMetadata } from "workflow";
-import type { Chapter, OutlineProposal, Section, WritingMemory } from "@/lib/types";
+import type { Chapter, Genre, OutlineProposal, Section, WritingMemory } from "@/lib/types";
 import { defaultPrompts } from "@/lib/samples";
 import { renderTemplate } from "@/lib/promptVars";
 import { safeJsonParse } from "@/lib/json";
@@ -10,6 +10,8 @@ export type SectionsWorkflowInput = {
   selectedOutline: OutlineProposal;
   interviewNotes: string;
   writingMemory: WritingMemory;
+  /** ジャンル別プロンプト選択用。未指定なら共通プロンプト */
+  genre?: Genre;
 };
 
 export type SectionsWorkflowResult = {
@@ -36,7 +38,10 @@ async function sectionsStep(
 ): Promise<SectionsWorkflowResult> {
   "use step";
 
-  const tpl = defaultPrompts.find((d) => d.id === "prompt-sections")!;
+  const promptId = input.genre === "business" ? "prompt-sections-business" : "prompt-sections";
+  const tpl =
+    defaultPrompts.find((d) => d.id === promptId) ??
+    defaultPrompts.find((d) => d.id === "prompt-sections")!;
   const systemPrompt = tpl.systemPrompt;
   const userPrompt = renderTemplate(tpl.userPromptTemplate, {
     interviewNotes: input.interviewNotes ?? "",

@@ -174,6 +174,53 @@ const FACT_CHECK: AgentDef = {
   }),
 };
 
+// ===== ビジネス書用: 論理構成チェック / 出典チェック =====
+
+const LOGIC_CHECK: AgentDef = {
+  key: "logic-check",
+  label: "論理構成",
+  promptId: "prompt-agent-logic",
+  buildVars: (ctx) => ({
+    body: ctx.draft.body,
+    chapterNumber: String(ctx.chapter?.chapterNumber ?? 0),
+    chapterTitle: ctx.chapter?.title ?? ctx.draft.chapterTitle,
+    sectionTitle: ctx.section?.title ?? ctx.draft.sectionTitle,
+    outlineSummary: ctx.project.selectedOutline
+      ? `${ctx.project.selectedOutline.title}：${ctx.project.selectedOutline.concept}`
+      : "",
+  }),
+};
+
+function serializeReferences(ctx: AgentContext): string {
+  const refs = ctx.project.references ?? [];
+  if (refs.length === 0) return "（参考文献が未登録です）";
+  return refs
+    .map(
+      (r) =>
+        `- ${r.title}${r.author ? ` / ${r.author}` : ""}${r.source ? `（${r.source}）` : ""}${
+          r.year ? ` ${r.year}` : ""
+        }${r.notes ? ` — ${r.notes}` : ""}`,
+    )
+    .join("\n");
+}
+
+function serializeGlossary(ctx: AgentContext): string {
+  const terms = ctx.project.glossary ?? [];
+  if (terms.length === 0) return "（用語集なし）";
+  return terms.map((t) => `- ${t.term}: ${t.definition}`).join("\n");
+}
+
+const CITATION_CHECK: AgentDef = {
+  key: "citation-check",
+  label: "出典",
+  promptId: "prompt-agent-citation",
+  buildVars: (ctx) => ({
+    body: ctx.draft.body,
+    references: serializeReferences(ctx),
+    glossary: serializeGlossary(ctx),
+  }),
+};
+
 // ===== P3: Novel-only reviewers =====
 
 function serializeCharacters(project: Project): string {
@@ -271,6 +318,22 @@ export async function factCheckStep(
 ): Promise<AgentReportSummary> {
   "use step";
   return runReviewer(FACT_CHECK, ctx, runId);
+}
+
+export async function logicCheckStep(
+  ctx: AgentContext,
+  runId: string,
+): Promise<AgentReportSummary> {
+  "use step";
+  return runReviewer(LOGIC_CHECK, ctx, runId);
+}
+
+export async function citationCheckStep(
+  ctx: AgentContext,
+  runId: string,
+): Promise<AgentReportSummary> {
+  "use step";
+  return runReviewer(CITATION_CHECK, ctx, runId);
 }
 
 // ===== P3: novel-only =====

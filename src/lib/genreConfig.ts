@@ -36,8 +36,16 @@ export type GenreConfig = {
     panelTitle: string;
     placeholder: string;
     help: string;
-    subjectLabel: string; // 「取材対象者名」/「主人公名」
+    subjectLabel: string; // 「取材対象者名」/「主人公名」/「著者名」
   };
+  /** このジャンルのパイプラインが使うプロンプト id */
+  pipelinePrompts: {
+    outline: string;
+    sections: string;
+    draft: string;
+  };
+  /** 構成案3案の型ラベル (未指定なら聞き書きのデフォルト) */
+  outlineTypeLabels?: Record<"chronological" | "thematic" | "narrative", string>;
 };
 
 export const biographyConfig: GenreConfig = {
@@ -71,6 +79,11 @@ export const biographyConfig: GenreConfig = {
     placeholder: "取材で聞き取った内容を、箇条書き／自由記述どちらでも貼り付けてください。",
     help: "事実関係のみで構いません。整形・要約はAIが行います。個人を特定する情報は事前にマスキングしてください。長さの目安は 20,000 字以内。40,000 字を超えるとサーバタイムアウト（最大 180 秒）に達する可能性があります。",
     subjectLabel: "取材対象者名",
+  },
+  pipelinePrompts: {
+    outline: "prompt-outline",
+    sections: "prompt-sections",
+    draft: "prompt-draft",
   },
 };
 
@@ -112,11 +125,65 @@ export const novelConfig: GenreConfig = {
     help: "プロット・設定・シーン案などをまとめて投入できます。この内容と、ナレッジ（登場人物 / Story Bible）に登録した情報を合わせて AI が章立て → 本文を組み立てます。",
     subjectLabel: "主人公名 / モデル",
   },
+  pipelinePrompts: {
+    outline: "prompt-outline",
+    sections: "prompt-sections",
+    draft: "prompt-draft",
+  },
+};
+
+export const businessConfig: GenreConfig = {
+  genre: "business",
+  label: "ビジネス書",
+  stages: {
+    material: {
+      navLabel: "素材",
+      pageTitle: "取材・リサーチ素材",
+      description: "主張の種・データ・事例を整理し、章立て案を生成します。",
+    },
+    structure: {
+      navLabel: "構成",
+      pageTitle: "章立て・論理構成",
+      description: "読者課題起点／フレームワーク／ストーリーの3案から方向性を選びます。",
+    },
+    writing: {
+      navLabel: "執筆",
+      pageTitle: "執筆",
+      description: "節単位で「主張→根拠→事例→まとめ」の本文を生成します。",
+    },
+    review: {
+      navLabel: "レビュー",
+      pageTitle: "論理・出典レビュー",
+      description: "論理の飛躍・要出典・事実確認を集約して確認します。",
+    },
+  },
+  knowledge: [
+    { href: "/references", label: "参考文献・用語集" },
+    { href: "/memory", label: "執筆メモリ" },
+  ],
+  material: {
+    panelTitle: "取材・リサーチ素材",
+    placeholder:
+      "書きたいテーマ、主張の種、取材メモ、データや事例、参考にしたい書籍・記事などを自由に入力してください。",
+    help: "主張・根拠・事例の素材をまとめて投入できます。参考文献・用語集をナレッジに登録すると、執筆と出典チェックに反映されます。",
+    subjectLabel: "著者名 / 監修者名",
+  },
+  pipelinePrompts: {
+    outline: "prompt-outline-business",
+    sections: "prompt-sections-business",
+    draft: "prompt-draft-business",
+  },
+  outlineTypeLabels: {
+    chronological: "読者課題起点型",
+    thematic: "フレームワーク型",
+    narrative: "ストーリー型",
+  },
 };
 
 const registry: Record<Genre, GenreConfig> = {
   biography: biographyConfig,
   novel: novelConfig,
+  business: businessConfig,
 };
 
 export function getGenreConfig(genre: Genre | undefined | null): GenreConfig {

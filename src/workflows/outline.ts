@@ -105,9 +105,11 @@ const VALID_TYPES: OutlineType[] = ["chronological", "thematic", "narrative"];
 function normalizeType(raw: unknown, idx: number): OutlineType {
   const s = typeof raw === "string" ? raw.toLowerCase() : "";
   if ((VALID_TYPES as string[]).includes(s)) return s as OutlineType;
-  if (s.includes("時系列") || s.includes("chrono")) return "chronological";
-  if (s.includes("テーマ") || s.includes("thema")) return "thematic";
-  if (s.includes("人物") || s.includes("narrat") || s.includes("読み物")) return "narrative";
+  if (s.includes("時系列") || s.includes("chrono") || s.includes("課題")) return "chronological";
+  if (s.includes("テーマ") || s.includes("thema") || s.includes("フレームワーク") || s.includes("framework"))
+    return "thematic";
+  if (s.includes("人物") || s.includes("narrat") || s.includes("読み物") || s.includes("ストーリー") || s.includes("story"))
+    return "narrative";
   return VALID_TYPES[Math.min(idx, VALID_TYPES.length - 1)];
 }
 

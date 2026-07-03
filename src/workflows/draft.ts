@@ -15,8 +15,10 @@ import { runAiStep } from "./shared";
 import { saveAgentReport, saveProjectSnapshot, saveSectionDraft } from "@/db/queries";
 import {
   characterVoiceStep,
+  citationCheckStep,
   consistencyLiteStep,
   factCheckStep,
+  logicCheckStep,
   proofreaderStep,
   readerExperienceStep,
   styleGuardianStep,
@@ -69,10 +71,14 @@ export async function draftWorkflow(input: DraftWorkflowInput): Promise<DraftWor
       if (enabled("character-voice")) steps.push(characterVoiceStep(ctx, runId));
       if (enabled("tension-checker")) steps.push(tensionStep(ctx, runId));
     }
-    // 聞き書き (実話ベース) なら校閲 (事実確認) を追加。
-    // 創作の小説モードでは不要。将来ビジネス書・実用書モードでも有効化する
-    if (input.project.genre === "biography") {
+    // 実話・実用系 (聞き書き / ビジネス書) は校閲 (事実確認) を追加。創作の小説では不要
+    if (input.project.genre === "biography" || input.project.genre === "business") {
       if (enabled("fact-check")) steps.push(factCheckStep(ctx, runId));
+    }
+    // ビジネス書専任: 論理構成チェック + 出典チェック
+    if (input.project.genre === "business") {
+      if (enabled("logic-check")) steps.push(logicCheckStep(ctx, runId));
+      if (enabled("citation-check")) steps.push(citationCheckStep(ctx, runId));
     }
     agentReports = await Promise.all(steps);
   }
@@ -118,13 +124,16 @@ async function draftStep(
     sectionSummary: section.summary ?? "",
   });
 
-  // P3: novel の場合、system prompt の末尾に characters と storyBible の要点を差し込む
-  const noveContext =
+  // ジャンル別コンテキストを system prompt の末尾に差し込む
+  // novel: characters + storyBible / business: 参考文献 + 用語集
+  const genreContext =
     project.genre === "novel"
       ? buildNovelContext(project)
-      : "";
-  const systemPromptFinal = noveContext
-    ? `${tpl.systemPrompt}\n\n${noveContext}`
+      : project.genre === "business"
+        ? buildBusinessContext(project)
+        : "";
+  const systemPromptFinal = genreContext
+    ? `${tpl.systemPrompt}\n\n${genreContext}`
     : tpl.systemPrompt;
 
   const formatNote = `\n\n出力は次のJSON形式（余計な文字は禁止）：\n${tpl.outputFormat}`;
@@ -236,6 +245,37 @@ function aggregateSeverity(
 function strArr(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
   return raw.filter((x): x is string => typeof x === "string" && x.trim().length > 0);
+}
+
+// ビジネス書: 参考文献・用語集を system prompt に注入する
+function buildBusinessContext(project: Project): string {
+  const refs = project.references ?? [];
+  const terms = project.glossary ?? [];
+  if (refs.length === 0 && terms.length === 0) return "";
+  const parts: string[] = ["【ビジネス書モード：参考文献と用語集】"];
+  if (refs.length > 0) {
+    parts.push("## 参考文献（登録済み）");
+    parts.push(
+      refs
+        .map(
+          (r) =>
+            `- ${r.title}${r.author ? ` / ${r.author}` : ""}${r.source ? `（${r.source}）` : ""}${
+              r.year ? ` ${r.year}` : ""
+            }`,
+        )
+        .join("\n"),
+    );
+  }
+  if (terms.length > 0) {
+    parts.push("## 用語集（この定義に従って用語を使うこと）");
+    parts.push(terms.map((t) => `- ${t.term}: ${t.definition}`).join("\n"));
+  }
+  parts.push(
+    "\n【守るべきこと】\n" +
+      "- 統計・数値・研究結果を使う場合、上記の参考文献にあるものはそれを根拠として使い、無いものは factCheckPoints に「要出典」として必ず挙げること\n" +
+      "- 用語は用語集の定義と矛盾しない使い方をすること",
+  );
+  return parts.join("\n\n");
 }
 
 // P3: novel の場合に system prompt に足す文字列を組み立てる

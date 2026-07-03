@@ -78,10 +78,14 @@ export function ProjectSwitcher(): JSX.Element {
       alert("プロジェクト名を入力してください。");
       return;
     }
-    const isNovel = confirm(
-      "このプロジェクトを「小説モード」で作成しますか？\n\nOK = 小説モード（登場人物 / Story Bible / 小説専任エージェントが有効）\nキャンセル = 聞き書きモード（自伝・人物伝）",
+    const choice = window.prompt(
+      "モードを選択してください（番号を入力）:\n1 = 聞き書き（自伝・人物伝）\n2 = 小説\n3 = ビジネス書",
+      "1",
     );
-    createProject(trimmed, { withSample: false, genre: isNovel ? "novel" : "biography" });
+    if (choice === null) return;
+    const genre =
+      choice.trim() === "2" ? ("novel" as const) : choice.trim() === "3" ? ("business" as const) : ("biography" as const);
+    createProject(trimmed, { withSample: false, genre });
     setOpen(false);
     reloadApp();
   }
@@ -191,9 +195,9 @@ export function ProjectSwitcher(): JSX.Element {
                 <span className="check">{p.id === currentId ? "✓" : ""}</span>
                 <span className="menu-item-name">{p.name}</span>
                 {(p as any).genre === "novel" ? (
-                  <span className="badge" style={{ marginLeft: "auto" }}>
-                    小説
-                  </span>
+                  <span className="badge" style={{ marginLeft: "auto" }}>小説</span>
+                ) : (p as any).genre === "business" ? (
+                  <span className="badge" style={{ marginLeft: "auto" }}>ビジネス書</span>
                 ) : null}
               </button>
             ))}

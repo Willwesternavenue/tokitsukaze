@@ -60,7 +60,7 @@ export default function InterviewNotesPage() {
     setLoading(true);
     try {
       const prompts = loadPrompts();
-      const promptTemplate = prompts.find((p) => p.id === "prompt-outline");
+      const promptTemplate = prompts.find((p) => p.id === config.pipelinePrompts.outline);
       const r = await postJson<{ proposals?: OutlineProposal[] }>("/api/generate-outline", {
         projectName: project.name,
         intervieweeName: project.intervieweeName,
@@ -157,7 +157,7 @@ export default function InterviewNotesPage() {
                 id="proj-genre"
                 className="input"
                 value={project.genre ?? "biography"}
-                onChange={(e) => updateField("genre", e.target.value as "biography" | "novel")}
+                onChange={(e) => updateField("genre", e.target.value as Project["genre"])}
               >
                 {allGenres.map((g) => (
                   <option key={g.genre} value={g.genre}>
