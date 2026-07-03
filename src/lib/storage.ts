@@ -98,6 +98,7 @@ function mergeDefaults(p: Project): Project {
     sectionAgentReports: { ...((p as any).sectionAgentReports || {}) },
     references: Array.isArray((p as any).references) ? (p as any).references : [],
     glossary: Array.isArray((p as any).glossary) ? (p as any).glossary : [],
+    screenplayMeta: (p as any).screenplayMeta ?? undefined,
   };
 }
 
@@ -362,6 +363,12 @@ export function updateReferences(refs: import("./types").Reference[]): Project {
 
 export function updateGlossary(terms: import("./types").GlossaryTerm[]): Project {
   return updateProject((p) => ({ ...p, glossary: terms }));
+}
+
+// ===== 脚本 =====
+
+export function updateScreenplayMeta(meta: import("./types").ScreenplayMeta): Project {
+  return updateProject((p) => ({ ...p, screenplayMeta: meta }));
 }
 
 // ===== Prompts (global) =====

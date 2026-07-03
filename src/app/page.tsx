@@ -10,8 +10,13 @@ import {
   resetProject,
 } from "@/lib/storage";
 import { postJson } from "@/lib/apiClient";
-import { getGenreConfig, allGenres } from "@/lib/genreConfig";
-import type { OutlineProposal, Project } from "@/lib/types";
+import {
+  getGenreConfig,
+  allGenres,
+  MEDIA_TYPE_OPTIONS,
+  buildScreenplayExtraContext,
+} from "@/lib/genreConfig";
+import type { OutlineProposal, Project, ScreenplayMediaType } from "@/lib/types";
 
 export default function InterviewNotesPage() {
   const router = useRouter();
@@ -69,6 +74,7 @@ export default function InterviewNotesPage() {
         desiredTone: project.desiredTone,
         interviewNotes: project.interviewNotes,
         promptTemplate,
+        extraContext: buildScreenplayExtraContext(project),
       });
       if (!r.ok) {
         setError(`AI生成に失敗しました。${r.error ?? ""}`);
@@ -193,6 +199,50 @@ export default function InterviewNotesPage() {
               />
             </div>
           </div>
+          {project.genre === "screenplay" ? (
+            <div className="field-row">
+              <div className="field">
+                <label htmlFor="proj-media">メディア種別</label>
+                <select
+                  id="proj-media"
+                  className="input"
+                  value={project.screenplayMeta?.mediaType ?? "film"}
+                  onChange={(e) => {
+                    const mediaType = e.target.value as ScreenplayMediaType;
+                    const preset = MEDIA_TYPE_OPTIONS.find((o) => o.value === mediaType);
+                    updateField("screenplayMeta", {
+                      mediaType,
+                      targetRuntimeMinutes:
+                        project.screenplayMeta?.targetRuntimeMinutes && project.screenplayMeta.mediaType === mediaType
+                          ? project.screenplayMeta.targetRuntimeMinutes
+                          : preset?.defaultMinutes ?? 110,
+                    });
+                  }}
+                >
+                  {MEDIA_TYPE_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="proj-runtime">目標尺（分）</label>
+                <input
+                  id="proj-runtime"
+                  type="number"
+                  className="input"
+                  min={1}
+                  value={project.screenplayMeta?.targetRuntimeMinutes ?? 110}
+                  onChange={(e) =>
+                    updateField("screenplayMeta", {
+                      mediaType: project.screenplayMeta?.mediaType ?? "film",
+                      targetRuntimeMinutes: Math.max(1, Number(e.target.value) || 1),
+                    })
+                  }
+                />
+                <p className="help">幕構成と各シーンの尺配分に反映されます。</p>
+              </div>
+            </div>
+          ) : null}
           <div className="field-row">
             <div className="field">
               <label htmlFor="proj-theme">本にしたいテーマ</label>

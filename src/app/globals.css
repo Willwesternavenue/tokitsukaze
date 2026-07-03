@@ -1024,6 +1024,59 @@ hr.sep {
   font-weight: 500;
 }
 
+/* ===== 脚本: 尺ゲージ・シーン表示 ===== */
+.runtime-gauge {
+  border: 1px solid var(--border);
+  background: var(--panel-alt);
+  border-radius: 3px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+}
+.runtime-gauge-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 12px;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.runtime-over {
+  color: var(--danger);
+  font-weight: 600;
+}
+.runtime-bar {
+  height: 6px;
+  background: #e3e8ee;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.runtime-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+}
+.runtime-bar-fill.over {
+  background: var(--danger);
+}
+.chapter-minutes {
+  float: right;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.scene-slug {
+  display: block;
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+.scene-minutes {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
 /* ===== 人物相関図 ===== */
 .relations-legend {
   display: flex;

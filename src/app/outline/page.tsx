@@ -11,7 +11,7 @@ import {
   updateProject,
 } from "@/lib/storage";
 import { postJson } from "@/lib/apiClient";
-import { getGenreConfig } from "@/lib/genreConfig";
+import { buildScreenplayExtraContext, getGenreConfig } from "@/lib/genreConfig";
 import type { OutlineProposal, Project } from "@/lib/types";
 
 const DEFAULT_TYPE_LABEL: Record<OutlineProposal["type"], string> = {
@@ -64,6 +64,7 @@ export default function OutlinePage() {
         desiredTone: project.desiredTone,
         interviewNotes: project.interviewNotes,
         promptTemplate,
+        extraContext: buildScreenplayExtraContext(project),
       });
       if (!r.ok) {
         setError(r.error ?? "再生成に失敗しました。");
@@ -104,6 +105,7 @@ export default function OutlinePage() {
             interviewNotes: next.interviewNotes,
             writingMemory: next.writingMemory,
             genre: next.genre,
+            extraContext: buildScreenplayExtraContext(next),
           },
         );
         if (!r.ok) throw new Error(r.error ?? "小見出しの生成に失敗しました。");

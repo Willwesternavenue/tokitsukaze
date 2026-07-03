@@ -1,6 +1,7 @@
 import { getWorkflowMetadata } from "workflow";
-import type { Chapter, Genre, OutlineProposal, Section, WritingMemory } from "@/lib/types";
+import type { Chapter, Genre, OutlineProposal, SceneMeta, Section, WritingMemory } from "@/lib/types";
 import { defaultPrompts } from "@/lib/samples";
+import { getGenreConfig } from "@/lib/genreConfig";
 import { renderTemplate } from "@/lib/promptVars";
 import { safeJsonParse } from "@/lib/json";
 import { makeId } from "@/lib/ids";
@@ -12,6 +13,8 @@ export type SectionsWorkflowInput = {
   writingMemory: WritingMemory;
   /** ジャンル別プロンプト選択用。未指定なら共通プロンプト */
   genre?: Genre;
+  /** ジャンル固有の追加コンテキスト (脚本: メディア種別・目標尺 等) */
+  extraContext?: string;
 };
 
 export type SectionsWorkflowResult = {
@@ -38,7 +41,7 @@ async function sectionsStep(
 ): Promise<SectionsWorkflowResult> {
   "use step";
 
-  const promptId = input.genre === "business" ? "prompt-sections-business" : "prompt-sections";
+  const promptId = getGenreConfig(input.genre).pipelinePrompts.sections;
   const tpl =
     defaultPrompts.find((d) => d.id === promptId) ??
     defaultPrompts.find((d) => d.id === "prompt-sections")!;
@@ -47,6 +50,7 @@ async function sectionsStep(
     interviewNotes: input.interviewNotes ?? "",
     selectedOutline: JSON.stringify(input.selectedOutline, null, 2),
     writingMemory: JSON.stringify(input.writingMemory ?? {}, null, 2),
+    extraContext: input.extraContext ?? "",
   });
   const formatNote = `\n\n出力は次のJSON形式（余計な文字は禁止）：\n${tpl.outputFormat}`;
 
@@ -87,6 +91,41 @@ async function sectionsStep(
 
 // ==== normalize helpers (現行 API route から移植・そのまま) ====
 
+/** 脚本用: AI 出力の sceneMeta を検証付きで正規化。無効値は undefined に落とす */
+function normalizeSceneMeta(raw: any): SceneMeta | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const location = typeof raw.location === "string" ? raw.location.trim() : "";
+  if (!location) return undefined;
+
+  const intExtRaw = typeof raw.intExt === "string" ? raw.intExt.toUpperCase().trim() : "";
+  const intExt: SceneMeta["intExt"] =
+    intExtRaw === "EXT" ? "EXT" : intExtRaw.includes("/") ? "INT/EXT" : "INT";
+
+  const todRaw = typeof raw.timeOfDay === "string" ? raw.timeOfDay.toUpperCase().trim() : "";
+  const validTod = ["DAY", "NIGHT", "DAWN", "DUSK", "CONTINUOUS"] as const;
+  const timeOfDay: SceneMeta["timeOfDay"] = (validTod as readonly string[]).includes(todRaw)
+    ? (todRaw as SceneMeta["timeOfDay"])
+    : todRaw.includes("夜") || todRaw === "N"
+      ? "NIGHT"
+      : "DAY";
+
+  const mins = Number(raw.estimatedMinutes);
+  const estimatedMinutes = Number.isFinite(mins) && mins > 0 ? Math.round(mins * 10) / 10 : undefined;
+
+  const presentCharacters = Array.isArray(raw.presentCharacters)
+    ? raw.presentCharacters.filter((c: unknown): c is string => typeof c === "string" && !!c.trim())
+    : undefined;
+
+  return {
+    intExt,
+    location,
+    timeOfDay,
+    estimatedMinutes,
+    presentCharacters,
+    purpose: typeof raw.purpose === "string" ? raw.purpose : undefined,
+  };
+}
+
 function asSectionList(raw: unknown): Section[] {
   if (!Array.isArray(raw)) return [];
   return raw
@@ -104,6 +143,7 @@ function asSectionList(raw: unknown): Section[] {
               : typeof s.description === "string"
                 ? s.description
                 : undefined,
+          sceneMeta: normalizeSceneMeta(s.sceneMeta),
         };
       }
       if (typeof s === "string" && s.trim()) {

@@ -14,6 +14,8 @@ export type OutlineWorkflowInput = {
   desiredTone: string;
   interviewNotes: string;
   promptTemplate?: PromptTemplate;
+  /** ジャンル固有の追加コンテキスト (脚本: メディア種別・目標尺 等) */
+  extraContext?: string;
 };
 
 export type OutlineWorkflowResult = {
@@ -58,6 +60,7 @@ async function outlineStep(input: OutlineWorkflowInput) {
     targetReader: input.targetReader ?? "",
     desiredTone: input.desiredTone ?? "",
     interviewNotes: input.interviewNotes,
+    extraContext: input.extraContext ?? "",
   });
   const formatNote = `\n\n出力は次のJSON形式で返してください（余計な文字は禁止）。\n${tpl.outputFormat}`;
 

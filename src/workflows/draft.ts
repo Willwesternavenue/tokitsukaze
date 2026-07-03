@@ -21,9 +21,12 @@ import {
   logicCheckStep,
   proofreaderStep,
   readerExperienceStep,
+  runtimeCheckStep,
+  screenplayFormatStep,
   styleGuardianStep,
   tensionStep,
 } from "./agents/reviewers";
+import { mediaTypeLabel } from "@/lib/genreConfig";
 
 export type DraftWorkflowInput = {
   project: Project;
@@ -66,8 +69,8 @@ export async function draftWorkflow(input: DraftWorkflowInput): Promise<DraftWor
     if (enabled("style-guardian")) steps.push(styleGuardianStep(ctx, runId));
     if (enabled("consistency-lite")) steps.push(consistencyLiteStep(ctx, runId));
     if (enabled("reader-experience")) steps.push(readerExperienceStep(ctx, runId));
-    // P3: novel なら小説専任 2 エージェントを追加
-    if (input.project.genre === "novel") {
+    // 小説・脚本: キャラクター一貫性 + 緊張感
+    if (input.project.genre === "novel" || input.project.genre === "screenplay") {
       if (enabled("character-voice")) steps.push(characterVoiceStep(ctx, runId));
       if (enabled("tension-checker")) steps.push(tensionStep(ctx, runId));
     }
@@ -79,6 +82,11 @@ export async function draftWorkflow(input: DraftWorkflowInput): Promise<DraftWor
     if (input.project.genre === "business") {
       if (enabled("logic-check")) steps.push(logicCheckStep(ctx, runId));
       if (enabled("citation-check")) steps.push(citationCheckStep(ctx, runId));
+    }
+    // 脚本専任: フォーマットチェック + 尺・テンポチェック
+    if (input.project.genre === "screenplay") {
+      if (enabled("format-check")) steps.push(screenplayFormatStep(ctx, runId));
+      if (enabled("runtime-check")) steps.push(runtimeCheckStep(ctx, runId));
     }
     agentReports = await Promise.all(steps);
   }
@@ -125,13 +133,15 @@ async function draftStep(
   });
 
   // ジャンル別コンテキストを system prompt の末尾に差し込む
-  // novel: characters + storyBible / business: 参考文献 + 用語集
+  // novel: characters + storyBible / business: 参考文献 + 用語集 / screenplay: キャラ + ロケーション + sceneMeta
   const genreContext =
     project.genre === "novel"
       ? buildNovelContext(project)
       : project.genre === "business"
         ? buildBusinessContext(project)
-        : "";
+        : project.genre === "screenplay"
+          ? buildScreenplayContext(project, section)
+          : "";
   const systemPromptFinal = genreContext
     ? `${tpl.systemPrompt}\n\n${genreContext}`
     : tpl.systemPrompt;
@@ -276,6 +286,95 @@ function buildBusinessContext(project: Project): string {
       "- 用語は用語集の定義と矛盾しない使い方をすること",
   );
   return parts.join("\n\n");
+}
+
+// 脚本: キャラクター・相関・ロケーション・尺情報・当該シーンの sceneMeta を注入する
+function buildScreenplayContext(project: Project, section: Section): string {
+  const parts: string[] = ["【脚本モード：作品設定とシーン情報】"];
+
+  const meta = project.screenplayMeta;
+  if (meta) {
+    parts.push(
+      `## 作品仕様\n- メディア種別: ${mediaTypeLabel(meta.mediaType)}\n- 目標尺: ${meta.targetRuntimeMinutes}分`,
+    );
+  }
+
+  const scene = section.sceneMeta;
+  if (scene) {
+    parts.push(
+      "## このシーンの設定（柱・尺・目的）\n" +
+        [
+          `- 柱: ○ ${scene.location}（${scene.intExt}・${todJa(scene.timeOfDay)}）`,
+          scene.estimatedMinutes != null ? `- 想定尺: ${scene.estimatedMinutes}分` : "",
+          scene.presentCharacters?.length
+            ? `- 登場人物: ${scene.presentCharacters.join("、")}`
+            : "",
+          scene.purpose ? `- このシーンの目的: ${scene.purpose}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+    );
+  }
+
+  const characters = project.characters ?? [];
+  if (characters.length > 0) {
+    parts.push("## 登場人物");
+    for (const c of characters) {
+      parts.push(
+        `● ${c.name}（${c.role}）\n` +
+          [
+            c.profile ? `  profile: ${c.profile}` : "",
+            c.desire ? `  desire: ${c.desire}` : "",
+            c.voice ? `  voice (口調・語尾): ${c.voice}` : "",
+            c.tabooWords?.length ? `  taboo (言わない語): ${c.tabooWords.join("、")}` : "",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+      );
+    }
+  }
+
+  const bible = project.storyBible;
+  if (bible?.relationships?.length) {
+    const nameOf = (id: string) => characters.find((c) => c.id === id)?.name ?? id;
+    parts.push("## 人物相関");
+    parts.push(
+      bible.relationships
+        .map(
+          (r) =>
+            `- ${nameOf(r.fromId)} ${r.mutual ? "〈相互〉" : "→"} ${nameOf(r.toId)}: ${r.label}`,
+        )
+        .join("\n"),
+    );
+  }
+  if (bible?.locations?.length) {
+    parts.push("## ロケーション（既出。柱の表記を統一すること）");
+    parts.push(
+      bible.locations
+        .map((l) => `- ${l.name}${l.description ? `: ${l.description}` : ""}`)
+        .join("\n"),
+    );
+  }
+
+  parts.push(
+    "\n【守るべきこと】\n" +
+      "- 柱は sceneMeta の値と一致させる（表記: ○ ロケーション名（INT・夜））\n" +
+      "- ト書きは現在形・視覚聴覚情報のみ。心情の直接説明は禁止\n" +
+      "- セリフは各キャラの voice / taboo に従う\n" +
+      "- 想定尺に見合う分量（1分 ≈ 250〜350字）で、シーンの目的を果たしたら早く出る",
+  );
+
+  return parts.join("\n\n");
+}
+
+function todJa(tod: string): string {
+  switch (tod) {
+    case "NIGHT": return "夜";
+    case "DAWN": return "明け方";
+    case "DUSK": return "夕";
+    case "CONTINUOUS": return "続き";
+    default: return "昼";
+  }
 }
 
 // P3: novel の場合に system prompt に足す文字列を組み立てる

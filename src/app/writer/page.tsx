@@ -20,9 +20,17 @@ import type {
 } from "@/lib/types";
 import { exportProjectDocx, exportSectionDocx } from "@/lib/docx";
 import { postJson } from "@/lib/apiClient";
-import { getGenreConfig } from "@/lib/genreConfig";
+import { buildScreenplayExtraContext, getGenreConfig } from "@/lib/genreConfig";
 
 type Selected = { chapter: Chapter; section: Section } | null;
+
+const TOD_JA: Record<string, string> = {
+  DAY: "昼",
+  NIGHT: "夜",
+  DAWN: "明け方",
+  DUSK: "夕",
+  CONTINUOUS: "続き",
+};
 
 export default function WriterPage() {
   const [project, setProject] = useState<Project | null>(null);
@@ -45,6 +53,18 @@ export default function WriterPage() {
 
   const genreCfg = getGenreConfig(project?.genre);
   const writingTitle = genreCfg.stages.writing.pageTitle;
+  const isScreenplay = project?.genre === "screenplay";
+  const targetMinutes = project?.screenplayMeta?.targetRuntimeMinutes ?? 0;
+  const totalMinutes = useMemo(() => {
+    if (!isScreenplay || !project?.selectedOutline) return 0;
+    return Math.round(
+      project.selectedOutline.chapters.reduce(
+        (sum, c) =>
+          sum + (c.sections ?? []).reduce((s2, s) => s2 + (s.sceneMeta?.estimatedMinutes ?? 0), 0),
+        0,
+      ),
+    );
+  }, [isScreenplay, project]);
 
   const draftMap = useMemo(() => {
     const m = new Map<string, SectionDraft>();
@@ -187,6 +207,7 @@ export default function WriterPage() {
           interviewNotes: project.interviewNotes,
           writingMemory: project.writingMemory,
           genre: project.genre,
+          extraContext: buildScreenplayExtraContext(project),
         },
       );
       if (!r.ok) throw new Error(r.error ?? "小見出しの生成に失敗しました。");
@@ -283,11 +304,38 @@ export default function WriterPage() {
             </button>
           </div>
           <div className="panel-body dense">
+            {isScreenplay ? (
+              <div className="runtime-gauge">
+                <div className="runtime-gauge-head">
+                  <strong>想定尺</strong>
+                  <span className={totalMinutes > targetMinutes ? "runtime-over" : ""}>
+                    {totalMinutes > 0 ? `${totalMinutes}分` : "未設定"}
+                    {targetMinutes > 0 ? ` / 目標 ${targetMinutes}分` : ""}
+                  </span>
+                </div>
+                {targetMinutes > 0 && totalMinutes > 0 ? (
+                  <div className="runtime-bar">
+                    <div
+                      className={`runtime-bar-fill ${totalMinutes > targetMinutes ? "over" : ""}`}
+                      style={{ width: `${Math.min(100, (totalMinutes / targetMinutes) * 100)}%` }}
+                    />
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             <ul className="toc">
-              {outline.chapters.map((c) => (
+              {outline.chapters.map((c) => {
+                const chapterMinutes = (c.sections ?? []).reduce(
+                  (sum, s) => sum + (s.sceneMeta?.estimatedMinutes ?? 0),
+                  0,
+                );
+                return (
                 <li key={c.id} className="chapter">
                   <div className="chapter-title">
                     第{c.chapterNumber}章　{c.title}
+                    {isScreenplay && chapterMinutes > 0 ? (
+                      <span className="chapter-minutes">{Math.round(chapterMinutes)}分</span>
+                    ) : null}
                   </div>
                   <ul className="section-list">
                     {(c.sections ?? []).length === 0 ? (
@@ -306,13 +354,25 @@ export default function WriterPage() {
                           onClick={() => setSelected({ chapter: c, section: s })}
                         >
                           <span className="dot" />
-                          <span>{s.title}</span>
+                          <span style={{ flex: 1 }}>
+                            {s.title}
+                            {isScreenplay && s.sceneMeta ? (
+                              <span className="scene-slug">
+                                ○ {s.sceneMeta.location}（{s.sceneMeta.intExt}・
+                                {TOD_JA[s.sceneMeta.timeOfDay] ?? "昼"}）
+                              </span>
+                            ) : null}
+                          </span>
+                          {isScreenplay && s.sceneMeta?.estimatedMinutes != null ? (
+                            <span className="scene-minutes">{s.sceneMeta.estimatedMinutes}分</span>
+                          ) : null}
                         </li>
                       );
                     })}
                   </ul>
                 </li>
-              ))}
+                );
+              })}
             </ul>
           </div>
         </aside>

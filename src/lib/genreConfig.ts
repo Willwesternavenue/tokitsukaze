@@ -180,11 +180,91 @@ export const businessConfig: GenreConfig = {
   },
 };
 
+export const screenplayConfig: GenreConfig = {
+  genre: "screenplay",
+  label: "脚本",
+  stages: {
+    material: {
+      navLabel: "素材",
+      pageTitle: "ログライン・素材",
+      description: "ログライン・テーマ・モチーフを整理し、幕構成（ハコ書きの骨格）を生成します。",
+    },
+    structure: {
+      navLabel: "構成",
+      pageTitle: "ハコ書き（シーン構成）",
+      description: "物語を幕・シークエンス・シーンに分解し、尺を配分します。",
+    },
+    writing: {
+      navLabel: "執筆",
+      pageTitle: "ト書き・セリフ執筆",
+      description: "シーン単位で柱・ト書き・セリフの脚本本文を生成します。",
+    },
+    review: {
+      navLabel: "レビュー",
+      pageTitle: "フォーマット・尺レビュー",
+      description: "脚本形式の逸脱・尺の乖離・テンポの停滞を集約して確認します。",
+    },
+  },
+  knowledge: [
+    { href: "/characters", label: "登場人物" },
+    { href: "/relations", label: "人物相関図" },
+    { href: "/bible", label: "設定・ロケーション" },
+    { href: "/memory", label: "執筆メモリ" },
+  ],
+  material: {
+    panelTitle: "ログライン・素材",
+    placeholder:
+      "ログライン（主人公が◯◯するために△△する話）、テーマ、モチーフ、主要な場面のアイデア、参考作品などを自由に入力してください。",
+    help: "メディア種別と目標尺を設定すると、幕構成と各シーンの尺配分に反映されます。登場人物・ロケーションはナレッジに登録すると執筆とチェックに使われます。",
+    subjectLabel: "主人公名",
+  },
+  pipelinePrompts: {
+    outline: "prompt-outline-screenplay",
+    sections: "prompt-sections-screenplay",
+    draft: "prompt-draft-screenplay",
+  },
+  outlineTypeLabels: {
+    chronological: "三幕構成型",
+    thematic: "シークエンス型",
+    narrative: "群像・ノンリニア型",
+  },
+};
+
 const registry: Record<Genre, GenreConfig> = {
   biography: biographyConfig,
   novel: novelConfig,
   business: businessConfig,
+  screenplay: screenplayConfig,
 };
+
+// ===== 脚本: メディア種別のプリセット =====
+
+export const MEDIA_TYPE_OPTIONS: {
+  value: import("./types").ScreenplayMediaType;
+  label: string;
+  defaultMinutes: number;
+}[] = [
+  { value: "film", label: "映画（長編）", defaultMinutes: 110 },
+  { value: "short", label: "短編", defaultMinutes: 15 },
+  { value: "tv-drama", label: "連続ドラマ（1話）", defaultMinutes: 45 },
+  { value: "stage", label: "舞台", defaultMinutes: 120 },
+];
+
+export function mediaTypeLabel(v: string | undefined): string {
+  return MEDIA_TYPE_OPTIONS.find((o) => o.value === v)?.label ?? "映画（長編）";
+}
+
+/**
+ * 脚本モードの extraContext (outline / sections 生成の user prompt に付与)。
+ * 他ジャンルでは空文字を返す。
+ */
+export function buildScreenplayExtraContext(p: {
+  genre?: string;
+  screenplayMeta?: { mediaType: string; targetRuntimeMinutes: number };
+}): string {
+  if (p.genre !== "screenplay" || !p.screenplayMeta) return "";
+  return `【作品仕様】\nメディア種別: ${mediaTypeLabel(p.screenplayMeta.mediaType)}\n目標尺: ${p.screenplayMeta.targetRuntimeMinutes}分`;
+}
 
 export function getGenreConfig(genre: Genre | undefined | null): GenreConfig {
   return registry[genre ?? "biography"] ?? biographyConfig;

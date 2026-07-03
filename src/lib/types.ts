@@ -2,6 +2,8 @@ export type Section = {
   id: string;
   title: string;
   summary?: string;
+  /** 脚本モード: シーンの slugline・尺・目的 (他ジャンルでは undefined) */
+  sceneMeta?: SceneMeta;
 };
 
 export type Chapter = {
@@ -98,6 +100,8 @@ export type Project = {
   // ===== ビジネス書 =====
   references: Reference[];
   glossary: GlossaryTerm[];
+  // ===== 脚本 =====
+  screenplayMeta?: ScreenplayMeta;
   // ===== Nav 再構成: AIスタッフのトグルと診断結果の永続化 =====
   /** 自動レビュアーの有効/無効。未設定キーは有効扱い */
   agentToggles?: Partial<Record<AgentKey, boolean>>;
@@ -126,7 +130,10 @@ export type AgentKey =
   | "fact-check"
   // ビジネス書専用
   | "logic-check"
-  | "citation-check";
+  | "citation-check"
+  // 脚本専用
+  | "format-check"
+  | "runtime-check";
 
 export type AgentSeverity = "info" | "warning" | "error";
 
@@ -149,7 +156,30 @@ export type AgentReportSummary = {
 
 // ===== P3: Novel-specific data model =====
 
-export type Genre = "biography" | "novel" | "business";
+export type Genre = "biography" | "novel" | "business" | "screenplay";
+
+// ===== 脚本モード =====
+
+export type ScreenplayMediaType = "film" | "short" | "tv-drama" | "stage";
+
+/**
+ * シーンの構造化データ（Hollywood slugline 準拠）。
+ * 表記はハイブリッド式「○ 印刷所・作業場（INT・夜）」で本文に出力されるが、
+ * データはこの構造で保持し、尺ゲージ・フォーマットチェックの参照元になる。
+ */
+export type SceneMeta = {
+  intExt: "INT" | "EXT" | "INT/EXT";
+  location: string;
+  timeOfDay: "DAY" | "NIGHT" | "DAWN" | "DUSK" | "CONTINUOUS";
+  estimatedMinutes?: number;    // 想定尺（分）
+  presentCharacters?: string[]; // 登場キャラ名
+  purpose?: string;             // このシーンの存在理由（何を前進させるか）
+};
+
+export type ScreenplayMeta = {
+  mediaType: ScreenplayMediaType;
+  targetRuntimeMinutes: number; // 映画=110, 短編=15, ドラマ=45, 舞台=120 等
+};
 
 // ===== ビジネス書: 参考文献・用語集 =====
 

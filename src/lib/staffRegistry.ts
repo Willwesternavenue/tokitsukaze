@@ -72,6 +72,24 @@ export const staffRegistry: StaffMeta[] = [
     genres: ["business"],
   },
   {
+    promptId: "prompt-outline-screenplay",
+    staffLabel: "構成案プランナー（脚本）",
+    group: "planning",
+    kind: "staff",
+    description: "三幕構成／シークエンス／群像・ノンリニアの3方向で幕構成を提案します。目標尺に合わせて配分します。",
+    runsWhen: "「章立て案を生成する」実行時（脚本モード）",
+    genres: ["screenplay"],
+  },
+  {
+    promptId: "prompt-sections-screenplay",
+    staffLabel: "ハコ書き担当（脚本）",
+    group: "planning",
+    kind: "staff",
+    description: "各幕にシーンを展開し、slugline (INT/EXT・場所・時間帯) と想定尺を割り当てます。",
+    runsWhen: "構成案の選択時・シーン再生成時（脚本モード）",
+    genres: ["screenplay"],
+  },
+  {
     promptId: "prompt-followup",
     staffLabel: "追加質問プランナー",
     group: "planning",
@@ -108,6 +126,16 @@ export const staffRegistry: StaffMeta[] = [
     description: "「主張→根拠→事例→まとめ」の結論ファースト構造で本文を執筆します。参考文献・用語集を参照します。",
     runsWhen: "「本文を生成」実行時（ビジネス書モード）",
     genres: ["business"],
+  },
+
+  {
+    promptId: "prompt-draft-screenplay",
+    staffLabel: "脚本ライター",
+    group: "writing",
+    kind: "staff",
+    description: "柱・ト書き・セリフの形式でシーン本文を執筆します。ト書きは視覚・聴覚情報のみ。",
+    runsWhen: "「本文を生成」実行時（脚本モード）",
+    genres: ["screenplay"],
   },
 
   // ===== レビュースタッフ =====
@@ -197,8 +225,8 @@ export const staffRegistry: StaffMeta[] = [
     group: "review",
     kind: "staff",
     description: "登場人物の口調・欲望・アークとの一貫性を検証します。",
-    runsWhen: "本文生成後に自動実行（小説モードのみ）",
-    genres: ["novel"],
+    runsWhen: "本文生成後に自動実行（小説・脚本モード）",
+    genres: ["novel", "screenplay"],
     agentKey: "character-voice",
   },
   {
@@ -207,9 +235,30 @@ export const staffRegistry: StaffMeta[] = [
     group: "review",
     kind: "staff",
     description: "葛藤・障害・不穏さの持続と、読者の期待の維持を検証します。",
-    runsWhen: "本文生成後に自動実行（小説モードのみ）",
-    genres: ["novel"],
+    runsWhen: "本文生成後に自動実行（小説・脚本モード）",
+    genres: ["novel", "screenplay"],
     agentKey: "tension-checker",
+  },
+
+  {
+    promptId: "prompt-agent-screenplay-format",
+    staffLabel: "フォーマットチェック",
+    group: "review",
+    kind: "staff",
+    description: "柱・ト書き・セリフの形式準拠を検証。ト書きへの内面描写の混入を検出します。",
+    runsWhen: "本文生成後に自動実行（脚本モードのみ）",
+    genres: ["screenplay"],
+    agentKey: "format-check",
+  },
+  {
+    promptId: "prompt-agent-runtime",
+    staffLabel: "尺・テンポチェック",
+    group: "review",
+    kind: "staff",
+    description: "想定尺と本文分量の乖離、テンポの停滞、シーンの存在理由の弱さを検出します。",
+    runsWhen: "本文生成後に自動実行（脚本モードのみ）",
+    genres: ["screenplay"],
+    agentKey: "runtime-check",
   },
 
   // ===== ルールブック =====
@@ -229,8 +278,6 @@ export const staffRegistry: StaffMeta[] = [
 export const plannedRiskStaff: { label: string; genres: string }[] = [
   { label: "プライバシーリスク", genres: "小説（実話ベース）" },
   { label: "名誉毀損リスク", genres: "小説（実話ベース）" },
-  { label: "フォーマットチェック", genres: "脚本（柱・ト書き・セリフ）" },
-  { label: "尺・テンポチェック", genres: "脚本（映画・ドラマ・舞台）" },
   { label: "手順検証", genres: "実用書" },
   { label: "簡易査読", genres: "論文" },
   { label: "SEOチェック", genres: "ブログ・記事" },
@@ -238,7 +285,6 @@ export const plannedRiskStaff: { label: string; genres: string }[] = [
 
 /** 検討中・開発予定のモード。設定画面などのロードマップ表示用 */
 export const plannedGenres: { label: string; status: "next" | "candidate"; note: string }[] = [
-  { label: "脚本", status: "next", note: "ハリウッドスタイルの柱 (INT/EXT)・ト書きベース。尺の管理。映画/ドラマ/舞台対応" },
   { label: "実用書", status: "candidate", note: "ハウツー・手順解説。手順の検証エージェントを検討" },
   { label: "ブログ・記事", status: "candidate", note: "SEO・見出し構成・ファクトチェック" },
   { label: "論文", status: "candidate", note: "IMRaD構成・日英翻訳・簡易査読" },

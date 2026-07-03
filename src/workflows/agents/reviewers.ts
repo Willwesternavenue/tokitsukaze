@@ -221,6 +221,49 @@ const CITATION_CHECK: AgentDef = {
   }),
 };
 
+// ===== 脚本用: フォーマットチェック / 尺・テンポチェック =====
+
+import { mediaTypeLabel } from "@/lib/genreConfig";
+
+function serializeSceneMeta(ctx: AgentContext): string {
+  const meta = ctx.section?.sceneMeta;
+  if (!meta) return "（sceneMeta 未設定）";
+  return [
+    `intExt: ${meta.intExt}`,
+    `location: ${meta.location}`,
+    `timeOfDay: ${meta.timeOfDay}`,
+    meta.estimatedMinutes != null ? `estimatedMinutes: ${meta.estimatedMinutes}` : "",
+    meta.presentCharacters?.length ? `presentCharacters: ${meta.presentCharacters.join("、")}` : "",
+    meta.purpose ? `purpose: ${meta.purpose}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+const SCREENPLAY_FORMAT: AgentDef = {
+  key: "format-check",
+  label: "フォーマット",
+  promptId: "prompt-agent-screenplay-format",
+  buildVars: (ctx) => ({
+    body: ctx.draft.body,
+    sceneMeta: serializeSceneMeta(ctx),
+    mediaType: mediaTypeLabel(ctx.project.screenplayMeta?.mediaType),
+  }),
+};
+
+const RUNTIME_CHECK: AgentDef = {
+  key: "runtime-check",
+  label: "尺・テンポ",
+  promptId: "prompt-agent-runtime",
+  buildVars: (ctx) => ({
+    body: ctx.draft.body,
+    bodyChars: String(ctx.draft.body.length),
+    sceneMeta: serializeSceneMeta(ctx),
+    mediaType: mediaTypeLabel(ctx.project.screenplayMeta?.mediaType),
+    targetRuntime: String(ctx.project.screenplayMeta?.targetRuntimeMinutes ?? "未設定"),
+  }),
+};
+
 // ===== P3: Novel-only reviewers =====
 
 function serializeCharacters(project: Project): string {
@@ -352,4 +395,22 @@ export async function tensionStep(
 ): Promise<AgentReportSummary> {
   "use step";
   return runReviewer(TENSION, ctx, runId);
+}
+
+// ===== 脚本専用 =====
+
+export async function screenplayFormatStep(
+  ctx: AgentContext,
+  runId: string,
+): Promise<AgentReportSummary> {
+  "use step";
+  return runReviewer(SCREENPLAY_FORMAT, ctx, runId);
+}
+
+export async function runtimeCheckStep(
+  ctx: AgentContext,
+  runId: string,
+): Promise<AgentReportSummary> {
+  "use step";
+  return runReviewer(RUNTIME_CHECK, ctx, runId);
 }

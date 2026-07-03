@@ -96,20 +96,20 @@ export default function BiblePage() {
     );
   }
 
-  if (project.genre !== "novel") {
+  if (!["novel", "screenplay"].includes(project.genre)) {
     return (
       <>
         <div className="page-header">
           <div>
             <h1>Story Bible</h1>
-            <p className="subtitle">この画面は小説モードのプロジェクトでのみ使えます。</p>
+            <p className="subtitle">この画面は小説・脚本モードのプロジェクトでのみ使えます。</p>
           </div>
         </div>
         <div className="empty-state">
-          現在のプロジェクトは「聞き書き」モードです。
+          現在のプロジェクトのモードではこの画面は使いません。
           <div style={{ marginTop: 12 }}>
-            <Link href="/" className="btn primary">
-              取材メモへ戻る
+            <Link href="/settings" className="btn primary">
+              設定でモードを変更
             </Link>
           </div>
         </div>
