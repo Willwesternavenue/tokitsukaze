@@ -230,11 +230,60 @@ export const screenplayConfig: GenreConfig = {
   },
 };
 
+export const blogConfig: GenreConfig = {
+  genre: "blog",
+  label: "ブログ記事",
+  stages: {
+    material: {
+      navLabel: "素材",
+      pageTitle: "ネタ・キーワード",
+      description: "キーワード・検索意図・ネタを整理し、見出し構成案を生成します。",
+    },
+    structure: {
+      navLabel: "構成",
+      pageTitle: "見出し構成",
+      description: "検索意図をカバーする H2/H3 見出しの構成を選びます。",
+    },
+    writing: {
+      navLabel: "執筆",
+      pageTitle: "本文執筆",
+      description: "見出し単位で、結論先出し・視点入りの本文を生成します。",
+    },
+    review: {
+      navLabel: "レビュー",
+      pageTitle: "SEO・ファクトレビュー",
+      description: "検索意図の充足・見出し・薄い内容・事実確認を集約して確認します。",
+    },
+  },
+  knowledge: [
+    { href: "/seo", label: "キーワード・ペルソナ" },
+    { href: "/memory", label: "執筆メモリ" },
+  ],
+  material: {
+    panelTitle: "ネタ・素材メモ",
+    placeholder:
+      "記事のテーマ、伝えたい主張、盛り込みたいネタ、一次情報・体験・データ、参考にしたい記事などを自由に入力してください。",
+    help: "ネタと素材を投入し、キーワード・ペルソナ（ナレッジ）を設定すると、検索意図に沿った構成と本文が生成されます。",
+    subjectLabel: "執筆者・メディア名",
+  },
+  pipelinePrompts: {
+    outline: "prompt-outline-blog",
+    sections: "prompt-sections-blog",
+    draft: "prompt-draft-blog",
+  },
+  outlineTypeLabels: {
+    chronological: "ハウツー・手順型",
+    thematic: "比較・まとめ型",
+    narrative: "体験・オピニオン型",
+  },
+};
+
 const registry: Record<Genre, GenreConfig> = {
   biography: biographyConfig,
   novel: novelConfig,
   business: businessConfig,
   screenplay: screenplayConfig,
+  blog: blogConfig,
 };
 
 // ===== 脚本: メディア種別のプリセット =====
@@ -255,15 +304,35 @@ export function mediaTypeLabel(v: string | undefined): string {
 }
 
 /**
- * 脚本モードの extraContext (outline / sections 生成の user prompt に付与)。
- * 他ジャンルでは空文字を返す。
+ * ジャンル固有の extraContext (outline / sections 生成の user prompt に付与)。
+ * 脚本: メディア種別・目標尺 / ブログ: キーワード・検索意図・ペルソナ。
+ * 対象外ジャンルでは空文字を返す。
+ * (関数名は歴史的経緯で screenplay 由来だが全ジャンル共通のディスパッチャ)
  */
 export function buildScreenplayExtraContext(p: {
   genre?: string;
   screenplayMeta?: { mediaType: string; targetRuntimeMinutes: number };
+  blogMeta?: {
+    targetKeyword?: string;
+    secondaryKeywords?: string[];
+    searchIntent?: string;
+    persona?: string;
+  };
 }): string {
-  if (p.genre !== "screenplay" || !p.screenplayMeta) return "";
-  return `【作品仕様】\nメディア種別: ${mediaTypeLabel(p.screenplayMeta.mediaType)}\n目標尺: ${p.screenplayMeta.targetRuntimeMinutes}分`;
+  if (p.genre === "screenplay" && p.screenplayMeta) {
+    return `【作品仕様】\nメディア種別: ${mediaTypeLabel(p.screenplayMeta.mediaType)}\n目標尺: ${p.screenplayMeta.targetRuntimeMinutes}分`;
+  }
+  if (p.genre === "blog" && p.blogMeta) {
+    const m = p.blogMeta;
+    return (
+      "【SEO・読者設定】\n" +
+      `対策キーワード: ${m.targetKeyword || "（未設定）"}\n` +
+      (m.secondaryKeywords?.length ? `関連キーワード: ${m.secondaryKeywords.join("、")}\n` : "") +
+      `検索意図: ${m.searchIntent || "（未設定）"}\n` +
+      `想定読者（ペルソナ）: ${m.persona || "（未設定）"}`
+    );
+  }
+  return "";
 }
 
 export function getGenreConfig(genre: Genre | undefined | null): GenreConfig {

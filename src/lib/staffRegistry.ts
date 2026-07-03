@@ -90,6 +90,24 @@ export const staffRegistry: StaffMeta[] = [
     genres: ["screenplay"],
   },
   {
+    promptId: "prompt-outline-blog",
+    staffLabel: "構成案プランナー（ブログ）",
+    group: "planning",
+    kind: "staff",
+    description: "ハウツー／比較まとめ／体験オピニオンの3方向で見出し構成を提案します。検索意図をカバーします。",
+    runsWhen: "「章立て案を生成する」実行時（ブログ記事モード）",
+    genres: ["blog"],
+  },
+  {
+    promptId: "prompt-sections-blog",
+    staffLabel: "見出し構成担当（ブログ）",
+    group: "planning",
+    kind: "staff",
+    description: "各ブロックに H2/H3 相当の小見出しを展開します。読者の連続した問いをカバーします。",
+    runsWhen: "構成案の選択時・見出し再生成時（ブログ記事モード）",
+    genres: ["blog"],
+  },
+  {
     promptId: "prompt-followup",
     staffLabel: "追加質問プランナー",
     group: "planning",
@@ -136,6 +154,16 @@ export const staffRegistry: StaffMeta[] = [
     description: "柱・ト書き・セリフの形式でシーン本文を執筆します。ト書きは視覚・聴覚情報のみ。",
     runsWhen: "「本文を生成」実行時（脚本モード）",
     genres: ["screenplay"],
+  },
+
+  {
+    promptId: "prompt-draft-blog",
+    staffLabel: "本文ライター（ブログ）",
+    group: "writing",
+    kind: "staff",
+    description: "結論先出し・視点入り・SEO配慮の本文を執筆します。アンチAIスロップ規則に従います。",
+    runsWhen: "「本文を生成」実行時（ブログ記事モード）",
+    genres: ["blog"],
   },
 
   // ===== レビュースタッフ =====
@@ -195,8 +223,8 @@ export const staffRegistry: StaffMeta[] = [
     kind: "staff",
     description:
       "本文中の事実主張を素材・一般知識と照合し、誤り・時代考証の違和感・要出典を検出します。実話ベースの原稿に必須。",
-    runsWhen: "本文生成後に自動実行（聞き書き・ビジネス書モード。創作の小説では実行されない）",
-    genres: ["biography", "business"],
+    runsWhen: "本文生成後に自動実行（聞き書き・ビジネス書・ブログ。創作の小説では実行されない）",
+    genres: ["biography", "business", "blog"],
     agentKey: "fact-check",
   },
   {
@@ -261,6 +289,17 @@ export const staffRegistry: StaffMeta[] = [
     agentKey: "runtime-check",
   },
 
+  {
+    promptId: "prompt-agent-seo",
+    staffLabel: "SEO・検索意図チェック",
+    group: "review",
+    kind: "staff",
+    description: "検索意図の充足・見出し・キーワードの扱い・薄い内容を検証し、メタディスクリプション案を提示します。",
+    runsWhen: "本文生成後に自動実行（ブログ記事モードのみ）",
+    genres: ["blog"],
+    agentKey: "seo-check",
+  },
+
   // ===== ルールブック =====
   {
     promptId: "prompt-style-rules",
@@ -280,13 +319,11 @@ export const plannedRiskStaff: { label: string; genres: string }[] = [
   { label: "名誉毀損リスク", genres: "小説（実話ベース）" },
   { label: "手順検証", genres: "実用書" },
   { label: "簡易査読", genres: "論文" },
-  { label: "SEOチェック", genres: "ブログ・記事" },
 ];
 
 /** 検討中・開発予定のモード。設定画面などのロードマップ表示用 */
 export const plannedGenres: { label: string; status: "next" | "candidate"; note: string }[] = [
   { label: "実用書", status: "candidate", note: "ハウツー・手順解説。手順の検証エージェントを検討" },
-  { label: "ブログ・記事", status: "candidate", note: "SEO・見出し構成・ファクトチェック" },
   { label: "論文", status: "candidate", note: "IMRaD構成・日英翻訳・簡易査読" },
 ];
 

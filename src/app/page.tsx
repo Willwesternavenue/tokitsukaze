@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   loadProject,
@@ -199,6 +200,51 @@ export default function InterviewNotesPage() {
               />
             </div>
           </div>
+          {project.genre === "blog" ? (
+            <div className="field-row">
+              <div className="field">
+                <label htmlFor="blog-keyword">対策キーワード</label>
+                <input
+                  id="blog-keyword"
+                  type="text"
+                  className="input"
+                  value={project.blogMeta?.targetKeyword ?? ""}
+                  onChange={(e) =>
+                    updateField("blogMeta", {
+                      targetKeyword: e.target.value,
+                      secondaryKeywords: project.blogMeta?.secondaryKeywords ?? [],
+                      searchIntent: project.blogMeta?.searchIntent ?? "",
+                      persona: project.blogMeta?.persona ?? "",
+                      metaDescription: project.blogMeta?.metaDescription ?? "",
+                    })
+                  }
+                  placeholder="例：生成AI 議事録 自動化"
+                />
+                <p className="help">
+                  検索意図・ペルソナは <Link href="/seo">キーワード・ペルソナ</Link> で詳しく設定できます。
+                </p>
+              </div>
+              <div className="field">
+                <label htmlFor="blog-intent">検索意図（簡易）</label>
+                <input
+                  id="blog-intent"
+                  type="text"
+                  className="input"
+                  value={project.blogMeta?.searchIntent ?? ""}
+                  onChange={(e) =>
+                    updateField("blogMeta", {
+                      targetKeyword: project.blogMeta?.targetKeyword ?? "",
+                      secondaryKeywords: project.blogMeta?.secondaryKeywords ?? [],
+                      searchIntent: e.target.value,
+                      persona: project.blogMeta?.persona ?? "",
+                      metaDescription: project.blogMeta?.metaDescription ?? "",
+                    })
+                  }
+                  placeholder="読者がこの検索で本当に知りたいこと"
+                />
+              </div>
+            </div>
+          ) : null}
           {project.genre === "screenplay" ? (
             <div className="field-row">
               <div className="field">

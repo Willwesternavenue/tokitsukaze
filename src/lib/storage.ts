@@ -99,6 +99,7 @@ function mergeDefaults(p: Project): Project {
     references: Array.isArray((p as any).references) ? (p as any).references : [],
     glossary: Array.isArray((p as any).glossary) ? (p as any).glossary : [],
     screenplayMeta: (p as any).screenplayMeta ?? undefined,
+    blogMeta: (p as any).blogMeta ?? undefined,
   };
 }
 
@@ -369,6 +370,12 @@ export function updateGlossary(terms: import("./types").GlossaryTerm[]): Project
 
 export function updateScreenplayMeta(meta: import("./types").ScreenplayMeta): Project {
   return updateProject((p) => ({ ...p, screenplayMeta: meta }));
+}
+
+// ===== ブログ記事 =====
+
+export function updateBlogMeta(meta: import("./types").BlogMeta): Project {
+  return updateProject((p) => ({ ...p, blogMeta: meta }));
 }
 
 // ===== Prompts (global) =====

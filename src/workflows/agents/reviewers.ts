@@ -221,6 +221,31 @@ const CITATION_CHECK: AgentDef = {
   }),
 };
 
+// ===== ブログ用: SEO・検索意図チェック =====
+
+function serializeBlogSeo(ctx: AgentContext): string {
+  const m = ctx.project.blogMeta;
+  if (!m) return "（SEO設定なし）";
+  return [
+    `対策キーワード: ${m.targetKeyword || "未設定"}`,
+    m.secondaryKeywords?.length ? `関連キーワード: ${m.secondaryKeywords.join("、")}` : "",
+    `検索意図: ${m.searchIntent || "未設定"}`,
+    `想定読者: ${m.persona || "未設定"}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+const SEO_CHECK: AgentDef = {
+  key: "seo-check",
+  label: "SEO・検索意図",
+  promptId: "prompt-agent-seo",
+  buildVars: (ctx) => ({
+    body: ctx.draft.body,
+    seoContext: serializeBlogSeo(ctx),
+  }),
+};
+
 // ===== 脚本用: フォーマットチェック / 尺・テンポチェック =====
 
 import { mediaTypeLabel } from "@/lib/genreConfig";
@@ -413,4 +438,14 @@ export async function runtimeCheckStep(
 ): Promise<AgentReportSummary> {
   "use step";
   return runReviewer(RUNTIME_CHECK, ctx, runId);
+}
+
+// ===== ブログ専用 =====
+
+export async function seoCheckStep(
+  ctx: AgentContext,
+  runId: string,
+): Promise<AgentReportSummary> {
+  "use step";
+  return runReviewer(SEO_CHECK, ctx, runId);
 }

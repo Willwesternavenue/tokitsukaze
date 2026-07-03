@@ -102,6 +102,8 @@ export type Project = {
   glossary: GlossaryTerm[];
   // ===== 脚本 =====
   screenplayMeta?: ScreenplayMeta;
+  // ===== ブログ記事 =====
+  blogMeta?: BlogMeta;
   // ===== Nav 再構成: AIスタッフのトグルと診断結果の永続化 =====
   /** 自動レビュアーの有効/無効。未設定キーは有効扱い */
   agentToggles?: Partial<Record<AgentKey, boolean>>;
@@ -133,7 +135,9 @@ export type AgentKey =
   | "citation-check"
   // 脚本専用
   | "format-check"
-  | "runtime-check";
+  | "runtime-check"
+  // ブログ記事専用
+  | "seo-check";
 
 export type AgentSeverity = "info" | "warning" | "error";
 
@@ -156,7 +160,17 @@ export type AgentReportSummary = {
 
 // ===== P3: Novel-specific data model =====
 
-export type Genre = "biography" | "novel" | "business" | "screenplay";
+export type Genre = "biography" | "novel" | "business" | "screenplay" | "blog";
+
+// ===== ブログ記事モード =====
+
+export type BlogMeta = {
+  targetKeyword: string;      // 対策キーワード
+  secondaryKeywords: string[]; // 関連キーワード
+  searchIntent: string;       // 検索意図（読者がこの検索で本当に知りたいこと）
+  persona: string;            // 想定読者の像
+  metaDescription: string;    // メタディスクリプション（AIが提案・編集可）
+};
 
 // ===== 脚本モード =====
 

@@ -79,13 +79,21 @@ export function ProjectSwitcher(): JSX.Element {
       return;
     }
     const choice = window.prompt(
-      "モードを選択してください（番号を入力）:\n1 = 聞き書き（自伝・人物伝）\n2 = 小説\n3 = ビジネス書\n4 = 脚本",
+      "モードを選択してください（番号を入力）:\n1 = 聞き書き（自伝・人物伝）\n2 = 小説\n3 = ビジネス書\n4 = 脚本\n5 = ブログ記事",
       "1",
     );
     if (choice === null) return;
     const c = choice.trim();
     const genre =
-      c === "2" ? ("novel" as const) : c === "3" ? ("business" as const) : c === "4" ? ("screenplay" as const) : ("biography" as const);
+      c === "2"
+        ? ("novel" as const)
+        : c === "3"
+          ? ("business" as const)
+          : c === "4"
+            ? ("screenplay" as const)
+            : c === "5"
+              ? ("blog" as const)
+              : ("biography" as const);
     createProject(trimmed, { withSample: false, genre });
     setOpen(false);
     reloadApp();
@@ -201,6 +209,8 @@ export function ProjectSwitcher(): JSX.Element {
                   <span className="badge" style={{ marginLeft: "auto" }}>ビジネス書</span>
                 ) : (p as any).genre === "screenplay" ? (
                   <span className="badge" style={{ marginLeft: "auto" }}>脚本</span>
+                ) : (p as any).genre === "blog" ? (
+                  <span className="badge" style={{ marginLeft: "auto" }}>ブログ</span>
                 ) : null}
               </button>
             ))}

@@ -23,6 +23,7 @@ import {
   readerExperienceStep,
   runtimeCheckStep,
   screenplayFormatStep,
+  seoCheckStep,
   styleGuardianStep,
   tensionStep,
 } from "./agents/reviewers";
@@ -74,9 +75,17 @@ export async function draftWorkflow(input: DraftWorkflowInput): Promise<DraftWor
       if (enabled("character-voice")) steps.push(characterVoiceStep(ctx, runId));
       if (enabled("tension-checker")) steps.push(tensionStep(ctx, runId));
     }
-    // 実話・実用系 (聞き書き / ビジネス書) は校閲 (事実確認) を追加。創作の小説では不要
-    if (input.project.genre === "biography" || input.project.genre === "business") {
+    // 実話・実用系 (聞き書き / ビジネス書 / ブログ) は校閲 (事実確認) を追加。創作の小説では不要
+    if (
+      input.project.genre === "biography" ||
+      input.project.genre === "business" ||
+      input.project.genre === "blog"
+    ) {
       if (enabled("fact-check")) steps.push(factCheckStep(ctx, runId));
+    }
+    // ブログ専任: SEO・検索意図チェック
+    if (input.project.genre === "blog") {
+      if (enabled("seo-check")) steps.push(seoCheckStep(ctx, runId));
     }
     // ビジネス書専任: 論理構成チェック + 出典チェック
     if (input.project.genre === "business") {
@@ -141,7 +150,9 @@ async function draftStep(
         ? buildBusinessContext(project)
         : project.genre === "screenplay"
           ? buildScreenplayContext(project, section)
-          : "";
+          : project.genre === "blog"
+            ? buildBlogContext(project)
+            : "";
   const systemPromptFinal = genreContext
     ? `${tpl.systemPrompt}\n\n${genreContext}`
     : tpl.systemPrompt;
@@ -284,6 +295,30 @@ function buildBusinessContext(project: Project): string {
     "\n【守るべきこと】\n" +
       "- 統計・数値・研究結果を使う場合、上記の参考文献にあるものはそれを根拠として使い、無いものは factCheckPoints に「要出典」として必ず挙げること\n" +
       "- 用語は用語集の定義と矛盾しない使い方をすること",
+  );
+  return parts.join("\n\n");
+}
+
+// ブログ: 対策キーワード・検索意図・ペルソナを system prompt に注入する
+function buildBlogContext(project: Project): string {
+  const m = project.blogMeta;
+  if (!m) return "";
+  const parts: string[] = ["【ブログ記事モード：SEO・読者設定】"];
+  parts.push(
+    [
+      `- 対策キーワード: ${m.targetKeyword || "（未設定）"}`,
+      m.secondaryKeywords?.length ? `- 関連キーワード: ${m.secondaryKeywords.join("、")}` : "",
+      `- 検索意図: ${m.searchIntent || "（未設定）"}`,
+      `- 想定読者（ペルソナ）: ${m.persona || "（未設定）"}`,
+    ]
+      .filter(Boolean)
+      .join("\n"),
+  );
+  parts.push(
+    "\n【守るべきこと】\n" +
+      "- 検索意図に正面から答える。読者がこの検索で知りたかったことを本文で満たす\n" +
+      "- 対策キーワードを見出し直下と本文に自然に含める（詰め込み禁止）\n" +
+      "- 想定読者の知識レベル・関心に合わせた具体性で書く",
   );
   return parts.join("\n\n");
 }
