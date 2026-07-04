@@ -38,6 +38,18 @@ export type SectionDraft = {
   continuityNotes: string[];
   createdAt: string;
   updatedAt: string;
+  /** 波及再生成から保護するフラグ（本文を手で直した節） */
+  locked?: boolean;
+};
+
+// 影響検出（波及反映）: 上流の編集で影響を受ける下流の節
+export type ImpactItem = {
+  chapterId: string;
+  sectionId: string;
+  chapterTitle: string;
+  sectionTitle: string;
+  reason: string;   // なぜ影響を受けるか
+  severity: "high" | "low";
 };
 
 export type WritingMemory = {

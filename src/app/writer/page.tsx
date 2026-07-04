@@ -10,6 +10,7 @@ import {
   removeSectionFromOutline,
   replaceSelectedOutline,
   saveSectionAgentReports,
+  setSectionLocked,
   updateSectionInOutline,
   upsertDraft,
   withStyleRules,
@@ -17,6 +18,7 @@ import {
 import type {
   AgentReportSummary,
   Chapter,
+  ImpactItem,
   OutlineProposal,
   Project,
   Section,
@@ -46,6 +48,12 @@ export default function WriterPage() {
   const [editingHeading, setEditingHeading] = useState(false);
   const [headingInstruction, setHeadingInstruction] = useState("");
   const [refiningHeading, setRefiningHeading] = useState(false);
+  // 波及反映（A+B）
+  const [detectingImpact, setDetectingImpact] = useState(false);
+  const [impactItems, setImpactItems] = useState<ImpactItem[] | null>(null);
+  const [impactSource, setImpactSource] = useState<{ chapterId: string; sectionId: string } | null>(null);
+  const [propagating, setPropagating] = useState(false);
+  const [propagateProgress, setPropagateProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -156,6 +164,107 @@ export default function WriterPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  // 指定の章・節を、渡された最新 project を context にして再生成し upsert する（波及再生成用）
+  async function regenerateOne(
+    baseProject: Project,
+    chapter: Chapter,
+    section: Section,
+  ): Promise<Project> {
+    const prompts = loadPrompts();
+    const base = prompts.find((p) => p.id === getGenreConfig(baseProject.genre).pipelinePrompts.draft);
+    const promptTemplate = base ? withStyleRules(base) : undefined;
+    const r = await postJson<{ draft?: SectionDraft; agentReports?: AgentReportSummary[] }>(
+      "/api/generate-draft",
+      {
+        project: baseProject,
+        chapter,
+        section,
+        promptTemplate,
+        referenceWorks: getSelectedReferenceWorks(baseProject),
+      },
+    );
+    if (!r.ok) throw new Error(r.error ?? "本文生成に失敗しました。");
+    const draft = r.data?.draft;
+    if (!draft) throw new Error("AIから本文が返りませんでした。");
+    upsertDraft(draft);
+    const key = `${draft.chapterId}::${draft.sectionId}`;
+    return saveSectionAgentReports(key, r.data?.agentReports ?? []);
+  }
+
+  // B: この節の編集が下流に与える影響を検出する
+  async function handleDetectImpact() {
+    if (!project || !selected) return;
+    setError(null);
+    setImpactItems(null);
+    setDetectingImpact(true);
+    try {
+      const r = await postJson<{ items?: ImpactItem[] }>("/api/detect-impact", {
+        project,
+        changedChapterId: selected.chapter.id,
+        changedSectionId: selected.section.id,
+      });
+      if (!r.ok) throw new Error(r.error ?? "影響の検出に失敗しました。");
+      setImpactItems(r.data?.items ?? []);
+      setImpactSource({ chapterId: selected.chapter.id, sectionId: selected.section.id });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDetectingImpact(false);
+    }
+  }
+
+  // A: 影響ありの節を、構成順に再生成する（locked は保護）
+  async function handlePropagate() {
+    if (!project || !impactItems) return;
+    setError(null);
+    setPropagating(true);
+    try {
+      const outline = project.selectedOutline;
+      if (!outline) throw new Error("構成案がありません。");
+      // 構成順に並べる
+      const orderIndex = new Map<string, number>();
+      let oi = 0;
+      for (const c of outline.chapters) for (const s of c.sections) orderIndex.set(`${c.id}::${s.id}`, oi++);
+      const targets = [...impactItems]
+        .filter((it) => {
+          const d = project.generatedSections.find(
+            (g) => g.chapterId === it.chapterId && g.sectionId === it.sectionId,
+          );
+          return d && !d.locked; // locked は再生成しない
+        })
+        .sort(
+          (a, b) =>
+            (orderIndex.get(`${a.chapterId}::${a.sectionId}`) ?? 0) -
+            (orderIndex.get(`${b.chapterId}::${b.sectionId}`) ?? 0),
+        );
+
+      let cur = project;
+      for (let i = 0; i < targets.length; i++) {
+        const it = targets[i];
+        const chapter = outline.chapters.find((c) => c.id === it.chapterId);
+        const section = chapter?.sections.find((s) => s.id === it.sectionId);
+        if (!chapter || !section) continue;
+        setPropagateProgress(`${i + 1}/${targets.length}：${section.title} を再生成中…`);
+        // 直前までの再生成結果を織り込むため、毎回最新 project を渡す
+        cur = await regenerateOne(cur, chapter, section);
+        setProject(cur);
+      }
+      setPropagateProgress(null);
+      setImpactItems(null);
+      setImpactSource(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setPropagateProgress(null);
+    } finally {
+      setPropagating(false);
+    }
+  }
+
+  function handleToggleLock(chapterId: string, sectionId: string, locked: boolean) {
+    const next = setSectionLocked(chapterId, sectionId, locked);
+    setProject(next);
   }
 
   async function handleReview() {
@@ -580,6 +689,24 @@ export default function WriterPage() {
                     <p className="help" style={{ marginTop: 8 }}>
                       小見出しを直したら「本文を{currentDraft ? "再" : ""}生成」で、新しい小見出しに沿った本文を作れます。
                     </p>
+                    {currentDraft ? (
+                      <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed var(--border)" }}>
+                        <div className="flex between" style={{ alignItems: "center" }}>
+                          <span style={{ fontSize: 12, color: "var(--text-soft)" }}>
+                            この節を直した影響で、以降の本文に矛盾が出ていないか確認します。
+                          </span>
+                          <button
+                            className="btn"
+                            type="button"
+                            onClick={handleDetectImpact}
+                            disabled={detectingImpact || propagating}
+                          >
+                            {detectingImpact ? <span className="spinner" /> : null}
+                            編集の影響を確認
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
                 <div className="panel-body">
@@ -592,6 +719,67 @@ export default function WriterPage() {
                   )}
                 </div>
               </div>
+
+              {impactItems && impactSource?.chapterId === selected.chapter.id && impactSource?.sectionId === selected.section.id ? (
+                <div className="panel">
+                  <div className="panel-header">
+                    <h2>編集の波及（影響のある節）</h2>
+                    {impactItems.length > 0 ? (
+                      <button
+                        className="btn primary"
+                        type="button"
+                        onClick={handlePropagate}
+                        disabled={propagating}
+                      >
+                        {propagating ? <span className="spinner" /> : null}
+                        {propagating ? "再生成中…" : "影響のある節を再生成"}
+                      </button>
+                    ) : null}
+                  </div>
+                  <div className="panel-body dense">
+                    {propagateProgress ? (
+                      <div className="alert info" style={{ marginBottom: 10 }}>{propagateProgress}</div>
+                    ) : null}
+                    {impactItems.length === 0 ? (
+                      <div className="empty-state">
+                        この編集による下流の節への影響は検出されませんでした。
+                      </div>
+                    ) : (
+                      <ul className="list-block">
+                        {impactItems.map((it) => {
+                          const draft = project.generatedSections.find(
+                            (d) => d.chapterId === it.chapterId && d.sectionId === it.sectionId,
+                          );
+                          const locked = !!draft?.locked;
+                          return (
+                            <li key={`${it.chapterId}::${it.sectionId}`} className="flex" style={{ gap: 10, alignItems: "flex-start" }}>
+                              <span className={`badge ${it.severity === "high" ? "warn" : "gray"}`}>
+                                {it.severity === "high" ? "要再生成" : "要確認"}
+                              </span>
+                              <span style={{ flex: 1 }}>
+                                <strong>{it.chapterTitle} / {it.sectionTitle}</strong>
+                                <span className="muted" style={{ display: "block", fontSize: 11 }}>{it.reason}</span>
+                              </span>
+                              <label className="staff-toggle" title="ロックすると波及再生成から保護されます">
+                                <input
+                                  type="checkbox"
+                                  checked={locked}
+                                  onChange={(e) => handleToggleLock(it.chapterId, it.sectionId, e.target.checked)}
+                                />
+                                <span>{locked ? "保護中" : "保護"}</span>
+                              </label>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                    <p className="help" style={{ marginTop: 8 }}>
+                      「影響のある節を再生成」を押すと、構成順に上流の更新を織り込みながら再生成します。
+                      手で直した節は「保護」にチェックすると再生成されません。
+                    </p>
+                  </div>
+                </div>
+              ) : null}
 
               {currentDraft && currentAgentReports.length > 0 ? (
                 <div className="panel">

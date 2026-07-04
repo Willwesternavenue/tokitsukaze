@@ -373,6 +373,20 @@ export function updateWritingMemory(mem: WritingMemory): Project {
   return updateProject((p) => ({ ...p, writingMemory: mem }));
 }
 
+/** 節本文の locked（波及再生成からの保護）を切り替え */
+export function setSectionLocked(
+  chapterId: string,
+  sectionId: string,
+  locked: boolean,
+): Project {
+  return updateProject((p) => ({
+    ...p,
+    generatedSections: p.generatedSections.map((d) =>
+      d.chapterId === chapterId && d.sectionId === sectionId ? { ...d, locked } : d,
+    ),
+  }));
+}
+
 // ===== P3 helpers =====
 
 export function updateGenre(genre: import("./types").Genre): Project {
