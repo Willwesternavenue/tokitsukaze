@@ -108,6 +108,15 @@ export const staffRegistry: StaffMeta[] = [
     genres: ["blog"],
   },
   {
+    promptId: "prompt-interview-questions",
+    staffLabel: "事前ヒアリング担当",
+    group: "planning",
+    kind: "staff",
+    description: "章立て生成の前に、著者へ確認する質問（3〜10問）を作成します。回答は素材に反映されます。",
+    runsWhen: "「章立て案を生成する」→ 事前ヒアリング画面で実行",
+    genres: "common",
+  },
+  {
     promptId: "prompt-refine-outline",
     staffLabel: "構成リファイナー",
     group: "planning",

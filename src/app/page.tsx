@@ -5,24 +5,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   loadProject,
-  loadPrompts,
   saveProject,
-  setOutlineProposals,
   resetProject,
 } from "@/lib/storage";
-import { postJson } from "@/lib/apiClient";
-import {
-  getGenreConfig,
-  allGenres,
-  MEDIA_TYPE_OPTIONS,
-  buildScreenplayExtraContext,
-} from "@/lib/genreConfig";
-import type { OutlineProposal, Project, ScreenplayMediaType } from "@/lib/types";
+import { getGenreConfig, allGenres, MEDIA_TYPE_OPTIONS } from "@/lib/genreConfig";
+import type { Project, ScreenplayMediaType } from "@/lib/types";
 
 export default function InterviewNotesPage() {
   const router = useRouter();
   const [project, setProject] = useState<Project | null>(null);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
 
@@ -55,7 +46,7 @@ export default function InterviewNotesPage() {
     });
   }
 
-  async function handleGenerateOutline() {
+  function handleGenerateOutline() {
     if (!project) return;
     if (!project.interviewNotes.trim()) {
       setError("取材メモを入力してください。");
@@ -63,40 +54,8 @@ export default function InterviewNotesPage() {
     }
     setError(null);
     setInfo(null);
-    setLoading(true);
-    try {
-      const prompts = loadPrompts();
-      const promptTemplate = prompts.find((p) => p.id === config.pipelinePrompts.outline);
-      const r = await postJson<{ proposals?: OutlineProposal[] }>("/api/generate-outline", {
-        projectName: project.name,
-        intervieweeName: project.intervieweeName,
-        theme: project.theme,
-        targetReader: project.targetReader,
-        desiredTone: project.desiredTone,
-        interviewNotes: project.interviewNotes,
-        promptTemplate,
-        extraContext: buildScreenplayExtraContext(project),
-      });
-      if (!r.ok) {
-        setError(`AI生成に失敗しました。${r.error ?? ""}`);
-        return;
-      }
-      const proposals: OutlineProposal[] = Array.isArray(r.data?.proposals)
-        ? (r.data!.proposals as OutlineProposal[])
-        : [];
-      if (proposals.length === 0) {
-        setError("AIが構成案を返しませんでした。プロンプトや入力内容を確認してください。");
-        return;
-      }
-      const next = setOutlineProposals(proposals);
-      setProject(next);
-      router.push("/outline");
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setError(`AI生成に失敗しました。${msg}`);
-    } finally {
-      setLoading(false);
-    }
+    // 章立て生成の前に、AIが確認する事前ヒアリング画面へ
+    router.push("/outline/interview");
   }
 
   function handleReset() {
@@ -129,11 +88,9 @@ export default function InterviewNotesPage() {
           <button
             className="btn primary lg"
             onClick={handleGenerateOutline}
-            disabled={loading}
             type="button"
           >
-            {loading ? <span className="spinner" /> : null}
-            {loading ? "構成案を生成中…" : "章立て案を生成する"}
+            章立て案を生成する →
           </button>
         </div>
       </div>
