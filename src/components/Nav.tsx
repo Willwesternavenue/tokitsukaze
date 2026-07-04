@@ -99,6 +99,13 @@ export function Nav(): JSX.Element {
       <Link href="/settings" className={pathname?.startsWith("/settings") ? "active" : ""}>
         <span>設定</span>
       </Link>
+      <Link
+        href="/guide"
+        className={pathname?.startsWith("/guide") ? "active" : ""}
+        style={{ marginLeft: "auto" }}
+      >
+        <span>使い方</span>
+      </Link>
     </nav>
   );
 }
