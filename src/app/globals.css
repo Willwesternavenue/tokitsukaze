@@ -1077,6 +1077,25 @@ hr.sep {
   flex-shrink: 0;
 }
 
+/* ===== 構成の調整 ===== */
+.refine-chapter {
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 12px;
+  margin-bottom: 10px;
+  background: var(--panel-alt);
+}
+.refine-chapter-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.refine-chapter-moves {
+  display: flex;
+  gap: 4px;
+}
+
 /* ===== 参照ライブラリ ===== */
 .library-row {
   display: grid;

@@ -748,6 +748,74 @@ message には「どの文献で裏付けるべきか / 何を追加すべきか
   ]
 }`,
   },
+  // ===== 構成案の調整（リファイン）=====
+  {
+    id: "prompt-refine-outline",
+    name: "構成リファイナー",
+    description: "選択した構成案を、指示に沿って全体的に改善する。章の追加・削除・統合・分割・順序変更・タイトル/概要の見直し。",
+    systemPrompt: `あなたは経験豊富な編集者です。既存の章立て構成案を、編集者の指示に従って改善してください。
+
+できること:
+- 章（{{unit}}）の追加・削除・統合・分割
+- 順序の変更
+- タイトル・概要の見直し・具体化
+
+守ること:
+- 指示で触れられていない部分は極力そのまま保持する（章の id は可能な限り維持する）
+- 章立て全体の流れ・一貫性を保つ
+- 章数を不必要に増やさない。読者にとって意味のある単位にする
+- 各章の概要には「この章で何が語られ、どう前進するか」を書く
+
+出力は、渡されたものと同じ JSON 形式（chapters 配列を持つ outline）で返してください。`,
+    userPromptTemplate: `【ジャンル】{{genreLabel}}
+
+【現在の構成案】
+{{outline}}
+
+【編集者の改善指示】
+{{instruction}}
+
+上記の指示に従って改善した構成案を、JSONで返してください。`,
+    outputFormat: `{
+  "outline": {
+    "id": "（渡された id をそのまま）",
+    "title": "...",
+    "type": "...",
+    "concept": "...",
+    "recommendedFor": "...",
+    "chapters": [
+      { "id": "chapter-1", "chapterNumber": 1, "title": "...", "summary": "...", "sections": [] }
+    ]
+  }
+}`,
+  },
+  {
+    id: "prompt-refine-chapter",
+    name: "章リファイナー（部分修正）",
+    description: "構成案の中の1つの章だけを、指示に沿って修正する。",
+    systemPrompt: `あなたは経験豊富な編集者です。章立て構成案のうち、指定された1つの章だけを、指示に従って修正してください。
+
+- その章の title と summary を見直す（概要は「この章で何が語られるか」を具体的に）
+- 前後の章との流れを意識するが、返すのは指定された章のみ
+- 章の id と chapterNumber は変更しない
+
+出力は指定章のみを JSON で返してください（他の章は返さない）。`,
+    userPromptTemplate: `【ジャンル】{{genreLabel}}
+
+【構成案の全体像（参考。前後の流れ把握用）】
+{{outlineOverview}}
+
+【修正対象の章】
+{{chapter}}
+
+【編集者の修正指示】
+{{instruction}}
+
+修正後の章を JSON で返してください。`,
+    outputFormat: `{
+  "chapter": { "id": "（そのまま）", "chapterNumber": 0, "title": "...", "summary": "..." }
+}`,
+  },
   // ===== 参照ライブラリ: 作品カルテ抽出 =====
   {
     id: "prompt-reference-analyze",

@@ -8,7 +8,6 @@ import {
   loadPrompts,
   selectOutline,
   setOutlineProposals,
-  updateProject,
 } from "@/lib/storage";
 import { postJson } from "@/lib/apiClient";
 import { buildScreenplayExtraContext, getGenreConfig } from "@/lib/genreConfig";
@@ -24,7 +23,6 @@ export default function OutlinePage() {
   const router = useRouter();
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(false);
-  const [sectionLoading, setSectionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -86,56 +84,17 @@ export default function OutlinePage() {
     }
   }
 
-  async function handleSelect(outlineId: string) {
+  function handleSelect(outlineId: string) {
     if (!project) return;
     setError(null);
-    setSectionLoading(true);
-    try {
-      let next = selectOutline(outlineId);
-      setProject(next);
-      if (!next.selectedOutline) {
-        throw new Error("選択した構成案が見つかりません。");
-      }
-      const needsSections = next.selectedOutline.chapters.some((c) => !c.sections || c.sections.length === 0);
-      if (needsSections) {
-        const r = await postJson<{ outline?: OutlineProposal; parseFailed?: boolean }>(
-          "/api/generate-sections",
-          {
-            selectedOutline: next.selectedOutline,
-            interviewNotes: next.interviewNotes,
-            writingMemory: next.writingMemory,
-            genre: next.genre,
-            extraContext: buildScreenplayExtraContext(next),
-          },
-        );
-        if (!r.ok) throw new Error(r.error ?? "小見出しの生成に失敗しました。");
-        if (r.data?.outline) {
-          next = updateProject((p) => ({
-            ...p,
-            selectedOutline: r.data!.outline,
-          }));
-          setProject(next);
-        }
-        if (r.data?.parseFailed) {
-          throw new Error(
-            "小見出しの生成に失敗しました（AI出力をJSONとして解釈できませんでした）。もう一度「この構成案で進める」を押してください。",
-          );
-        }
-        const hasAnySection = next.selectedOutline?.chapters.some(
-          (c) => c.sections && c.sections.length > 0,
-        );
-        if (!hasAnySection) {
-          throw new Error(
-            "小見出しが1件も生成されませんでした。もう一度「この構成案で進める」を押してください。",
-          );
-        }
-      }
-      router.push("/writer");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSectionLoading(false);
+    const next = selectOutline(outlineId);
+    setProject(next);
+    if (!next.selectedOutline) {
+      setError("選択した構成案が見つかりません。");
+      return;
     }
+    // 選択後は「構成の調整」画面へ。小見出し生成はそこで行う
+    router.push("/outline/refine");
   }
 
   const proposals = project.outlineProposals ?? [];
@@ -147,7 +106,7 @@ export default function OutlinePage() {
         <div>
           <h1>{structureTitle}</h1>
           <p className="subtitle">
-            AIが3つの構成案を提示します。編集者が方向性を選択してください。
+            AIが3つの構成案を提示します。方向性を選ぶと、次の画面でAIと一緒に構成を調整できます。
           </p>
         </div>
         <div className="actions">
@@ -155,7 +114,7 @@ export default function OutlinePage() {
           <button
             className="btn"
             onClick={handleRegenerate}
-            disabled={loading || sectionLoading}
+            disabled={loading}
             type="button"
           >
             {loading ? <span className="spinner" /> : null}
@@ -210,11 +169,9 @@ export default function OutlinePage() {
                     className="btn primary"
                     style={{ marginLeft: "auto" }}
                     onClick={() => handleSelect(p.id)}
-                    disabled={sectionLoading}
                     type="button"
                   >
-                    {sectionLoading && isSelected ? <span className="spinner" /> : null}
-                    {sectionLoading && isSelected ? "小見出し生成中…" : "この構成案で進める"}
+                    この案で調整する →
                   </button>
                 </div>
               </section>

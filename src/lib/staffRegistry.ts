@@ -108,6 +108,15 @@ export const staffRegistry: StaffMeta[] = [
     genres: ["blog"],
   },
   {
+    promptId: "prompt-refine-outline",
+    staffLabel: "構成リファイナー",
+    group: "planning",
+    kind: "staff",
+    description: "選択した構成案を指示に沿って改善します（全体改善・章ごとの部分修正）。",
+    runsWhen: "構成の調整画面で「AIで改善」実行時",
+    genres: "common",
+  },
+  {
     promptId: "prompt-followup",
     staffLabel: "追加質問プランナー",
     group: "planning",
