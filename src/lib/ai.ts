@@ -185,16 +185,22 @@ export async function generateJsonWithRetry<T>(
     temperature?: number;
     maxAttempts?: number;
     model?: string;
+    /**
+     * 2回目以降で使うモデル。1回目を高速モデル、失敗したら JSON に強い上位モデルへ
+     * 自動エスカレーションするために使う（速度と信頼性の両立）。
+     */
+    retryModel?: string;
     /** 全試行を合わせた総制限時間(ms)。Vercel の関数上限(180s)より短くして 504 を防ぐ。 */
     totalTimeoutMs?: number;
   } = {},
-): Promise<{ parsed: T | null; raw: string; attempts: number; timedOut?: boolean }> {
+): Promise<{ parsed: T | null; raw: string; attempts: number; timedOut?: boolean; usedModel?: string }> {
   const maxAttempts = Math.max(1, opts.maxAttempts ?? 2);
   const totalTimeoutMs = opts.totalTimeoutMs && opts.totalTimeoutMs > 0 ? opts.totalTimeoutMs : 165000;
   const startedAt = Date.now();
   const remaining = () => totalTimeoutMs - (Date.now() - startedAt);
   let currentMessages = messages;
   let lastRaw = "";
+  let usedModel = opts.model;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const budget = remaining();
@@ -203,29 +209,32 @@ export async function generateJsonWithRetry<T>(
       console.warn(`[ai] 残り時間 ${budget}ms のため試行 ${attempt} をスキップします。`);
       break;
     }
+    // 2回目以降は retryModel（上位モデル）へエスカレーション
+    const modelForAttempt = attempt >= 2 && opts.retryModel ? opts.retryModel : opts.model;
+    usedModel = modelForAttempt;
     let raw: string;
     try {
       raw = await generateJson(currentMessages, {
         maxTokens: opts.maxTokens,
         temperature: opts.temperature,
-        model: opts.model,
+        model: modelForAttempt,
         timeoutMs: Math.max(1000, budget),
       });
     } catch (e) {
       if (e instanceof AITimeoutError) {
         console.warn(`[ai] attempt ${attempt}/${maxAttempts}: 時間切れで打ち切り。`);
-        return { parsed: null, raw: lastRaw, attempts: attempt, timedOut: true };
+        return { parsed: null, raw: lastRaw, attempts: attempt, timedOut: true, usedModel };
       }
       throw e;
     }
     lastRaw = raw;
     const parsed = parser(raw);
     if (parsed !== null) {
-      if (attempt > 1) console.log(`[ai] parse success on attempt ${attempt}`);
-      return { parsed, raw, attempts: attempt };
+      if (attempt > 1) console.log(`[ai] parse success on attempt ${attempt} (model=${modelForAttempt})`);
+      return { parsed, raw, attempts: attempt, usedModel };
     }
     console.warn(
-      `[ai] attempt ${attempt}/${maxAttempts}: 出力をパースできず。リトライします。`,
+      `[ai] attempt ${attempt}/${maxAttempts} (model=${modelForAttempt}): 出力をパースできず。リトライします。`,
     );
     if (attempt < maxAttempts) {
       currentMessages = [
@@ -236,12 +245,13 @@ export async function generateJsonWithRetry<T>(
           content:
             "前回の出力は JSON として解釈できませんでした。" +
             "説明文・前置き・後書き・コードフェンスを一切付けず、" +
-            "`{` から始まり `}` で終わる純粋で valid な JSON オブジェクトのみを、改めて1つだけ出力してください。",
+            "`{` から始まり `}` で終わる純粋で valid な JSON オブジェクトのみを、改めて1つだけ出力してください。" +
+            "章の要約は各1〜2文に短くまとめ、全体を必ず閉じ括弧まで出力しきってください。",
         },
       ];
     }
   }
-  return { parsed: null, raw: lastRaw, attempts: maxAttempts };
+  return { parsed: null, raw: lastRaw, attempts: maxAttempts, usedModel };
 }
 
 export function currentProvider(): AIProvider {

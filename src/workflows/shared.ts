@@ -16,6 +16,8 @@ export type StepAiInput = {
   maxAttempts?: number;
   /** モデルの明示指定。計画系ステップは planningModel() を渡して高速化する。 */
   model?: string;
+  /** 2回目以降で使う上位モデル（JSON信頼性のためのエスカレーション先）。 */
+  retryModel?: string;
   /** 全試行合計の制限時間(ms)。未指定なら generateJsonWithRetry の既定(165s)。 */
   timeoutMs?: number;
 };
@@ -40,13 +42,14 @@ export async function runAiStep<T>(
 ): Promise<StepAiResult<T>> {
   try {
     const provider = currentProvider();
-    const model = input.model || mainModel();
     const result = await generateJsonWithRetry(input.messages, parser, {
       maxTokens: input.maxTokens,
       maxAttempts: input.maxAttempts,
       model: input.model,
+      retryModel: input.retryModel,
       totalTimeoutMs: input.timeoutMs,
     });
+    const model = result.usedModel || input.model || mainModel();
     return {
       parsed: result.parsed,
       raw: result.raw,

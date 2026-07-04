@@ -1,7 +1,7 @@
 import { getWorkflowMetadata } from "workflow";
 import type { OutlineProposal, OutlineType, PromptTemplate, Chapter, Section } from "@/lib/types";
 import { defaultPrompts } from "@/lib/samples";
-import { planningModel } from "@/lib/ai";
+import { planningModel, mainModel } from "@/lib/ai";
 import { renderTemplate } from "@/lib/promptVars";
 import { safeJsonParse } from "@/lib/json";
 import { makeId } from "@/lib/ids";
@@ -71,13 +71,14 @@ async function outlineStep(input: OutlineWorkflowInput) {
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt + formatNote },
       ],
-      // 構成は「章タイトル＋要約」の3案（小見出しは後段で生成）。8000で十分かつ暴走を防ぐ。
-      maxTokens: 8000,
-      maxAttempts: 2,
-      // 計画タスクは高速モデルに寄せて 504 を防ぐ（env ANTHROPIC_MODEL_FAST 等で上書き可）
+      // 長編小説は3案×多章で出力が大きい。切れを防ぐため上限を十分に取る（非同期化で時間の余裕あり）。
+      maxTokens: 16000,
+      maxAttempts: 3,
+      // 1回目は高速モデル。失敗したら JSON に強い上位モデルへ自動エスカレーション。
       model: planningModel(),
-      // Vercel 関数上限(180s)より短く。超過前に打ち切ってクリーンなエラーにする。
-      timeoutMs: 155000,
+      retryModel: mainModel(),
+      // 非同期実行なので余裕をもって（step 側の実行上限内で打ち切る）。
+      timeoutMs: 240000,
     },
     (raw) => {
       const parsed = safeJsonParse<{ proposals?: unknown }>(raw);

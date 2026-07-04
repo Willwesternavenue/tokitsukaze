@@ -1,7 +1,7 @@
 import { getWorkflowMetadata } from "workflow";
 import type { Chapter, Genre, OutlineProposal, SceneMeta, Section, WritingMemory } from "@/lib/types";
 import { defaultPrompts } from "@/lib/samples";
-import { planningModel } from "@/lib/ai";
+import { planningModel, mainModel } from "@/lib/ai";
 import { getGenreConfig } from "@/lib/genreConfig";
 import { renderTemplate } from "@/lib/promptVars";
 import { safeJsonParse } from "@/lib/json";
@@ -61,11 +61,12 @@ async function sectionsStep(
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt + formatNote },
       ],
-      maxTokens: 12000,
-      maxAttempts: 2,
-      // 小見出しも計画タスク。高速モデル＋制限時間で 504 を防ぐ。
+      maxTokens: 16000,
+      maxAttempts: 3,
+      // 1回目は高速モデル、失敗したら上位モデルへエスカレーション。
       model: planningModel(),
-      timeoutMs: 155000,
+      retryModel: mainModel(),
+      timeoutMs: 240000,
     },
     (raw) => {
       const parsed = safeJsonParse<{ outline?: any }>(raw);
