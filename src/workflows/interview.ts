@@ -1,6 +1,7 @@
 import { getWorkflowMetadata } from "workflow";
 import type { Project } from "@/lib/types";
 import { defaultPrompts } from "@/lib/samples";
+import { planningModel } from "@/lib/ai";
 import { getGenreConfig } from "@/lib/genreConfig";
 import { renderTemplate } from "@/lib/promptVars";
 import { safeJsonParse } from "@/lib/json";
@@ -51,6 +52,8 @@ async function questionsStep(
       ],
       maxTokens: 1500,
       maxAttempts: 2,
+      model: planningModel(),
+      timeoutMs: 60000,
     },
     (raw) => {
       const parsed = safeJsonParse<{ questions?: unknown }>(raw);

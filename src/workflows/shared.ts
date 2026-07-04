@@ -7,13 +7,17 @@
  * P1 では単純ラッパで、動作品質を維持したまま基盤だけ WDK に載せる。
  */
 
-import { AIConfigError, currentProvider, generateJsonWithRetry } from "@/lib/ai";
+import { AIConfigError, currentProvider, generateJsonWithRetry, mainModel } from "@/lib/ai";
 import type { ChatMessage } from "@/lib/ai";
 
 export type StepAiInput = {
   messages: ChatMessage[];
   maxTokens?: number;
   maxAttempts?: number;
+  /** モデルの明示指定。計画系ステップは planningModel() を渡して高速化する。 */
+  model?: string;
+  /** 全試行合計の制限時間(ms)。未指定なら generateJsonWithRetry の既定(165s)。 */
+  timeoutMs?: number;
 };
 
 export type StepAiResult<T> = {
@@ -22,6 +26,8 @@ export type StepAiResult<T> = {
   attempts: number;
   model: string;
   provider: string;
+  /** 制限時間切れで打ち切った場合 true（呼び出し側でメッセージを出し分ける） */
+  timedOut?: boolean;
 };
 
 /**
@@ -34,13 +40,12 @@ export async function runAiStep<T>(
 ): Promise<StepAiResult<T>> {
   try {
     const provider = currentProvider();
-    const model =
-      provider === "anthropic"
-        ? process.env.ANTHROPIC_MODEL || "claude-haiku-4-5-20251001"
-        : process.env.OPENAI_MODEL || "gpt-4o-mini";
+    const model = input.model || mainModel();
     const result = await generateJsonWithRetry(input.messages, parser, {
       maxTokens: input.maxTokens,
       maxAttempts: input.maxAttempts,
+      model: input.model,
+      totalTimeoutMs: input.timeoutMs,
     });
     return {
       parsed: result.parsed,
@@ -48,6 +53,7 @@ export async function runAiStep<T>(
       attempts: result.attempts,
       model,
       provider,
+      timedOut: result.timedOut,
     };
   } catch (e) {
     if (e instanceof AIConfigError) throw e;
