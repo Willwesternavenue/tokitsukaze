@@ -4,9 +4,10 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { loadProject, loadPrompts, setOutlineProposals } from "@/lib/storage";
-import { postJson } from "@/lib/apiClient";
+import { postJson, startAndPollRun } from "@/lib/apiClient";
 import { buildScreenplayExtraContext, getGenreConfig } from "@/lib/genreConfig";
-import type { OutlineProposal, Project } from "@/lib/types";
+import type { Project } from "@/lib/types";
+import type { OutlineWorkflowResult } from "@/workflows/outline";
 
 export default function OutlineInterviewPage() {
   const router = useRouter();
@@ -59,7 +60,7 @@ export default function OutlineInterviewPage() {
         if (qa) notes = `${project.interviewNotes}\n\n【事前ヒアリングの補足】\n${qa}`;
       }
 
-      const r = await postJson<{ proposals?: OutlineProposal[] }>("/api/generate-outline", {
+      const r = await startAndPollRun<OutlineWorkflowResult>("/api/generate-outline", {
         projectName: project.name,
         intervieweeName: project.intervieweeName,
         theme: project.theme,
@@ -69,8 +70,9 @@ export default function OutlineInterviewPage() {
         promptTemplate,
         extraContext: buildScreenplayExtraContext(project),
       });
-      if (!r.ok) throw new Error(r.error ?? "構成案の生成に失敗しました。");
-      const proposals = Array.isArray(r.data?.proposals) ? (r.data!.proposals as OutlineProposal[]) : [];
+      if (!r.ok) throw new Error(r.error);
+      if (!r.result.ok) throw new Error(r.result.error ?? "構成案の生成に失敗しました。");
+      const proposals = r.result.proposals;
       if (proposals.length === 0) throw new Error("AIが構成案を返しませんでした。");
       setOutlineProposals(proposals);
       router.push("/outline");

@@ -38,7 +38,31 @@ export async function postJson<T = any>(
     };
   }
 
-  // JSON として読めるか試す
+  return interpretResponse<T>(res, text);
+}
+
+/** GET 版。ワークフローの状態ポーリングなどに使う。 */
+export async function getJson<T = any>(url: string): Promise<ApiResult<T>> {
+  let res: Response;
+  try {
+    res = await fetch(url, { method: "GET", headers: { Accept: "application/json" } });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, status: 0, data: null, error: `通信に失敗しました: ${msg}` };
+  }
+  const text = await res.text();
+  if (!text) {
+    return {
+      ok: res.ok,
+      status: res.status,
+      data: null,
+      error: res.ok ? null : `HTTP ${res.status} (空のレスポンス)`,
+    };
+  }
+  return interpretResponse<T>(res, text);
+}
+
+function interpretResponse<T>(res: Response, text: string): ApiResult<T> {
   try {
     const data = JSON.parse(text) as T;
     if (!res.ok) {
@@ -52,8 +76,7 @@ export async function postJson<T = any>(
   } catch {
     // JSON でない（Vercel のタイムアウトページ、502 HTML、テキストエラー等）
     const looksLikeTimeout =
-      /timeout|timed out|FUNCTION_INVOCATION_TIMEOUT/i.test(text) ||
-      res.status === 504;
+      /timeout|timed out|FUNCTION_INVOCATION_TIMEOUT/i.test(text) || res.status === 504;
     const looksLikeHtml = /<!doctype|<html/i.test(text.slice(0, 200));
     let humanMsg: string;
     if (looksLikeTimeout) {
@@ -65,4 +88,62 @@ export async function postJson<T = any>(
     }
     return { ok: false, status: res.status, data: null, error: humanMsg };
   }
+}
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+export type RunProgress = "starting" | "pending" | "running";
+
+/**
+ * ワークフローを「開始（runId 取得）→ 完了までポーリング」する再利用ヘルパ。
+ *
+ * これにより、生成処理は 1 リクエストの実行時間（Vercel 関数上限=180s）に縛られず、
+ * サーバ側でバックグラウンド実行される。長い素材でも 504 にならない。
+ *
+ * `startUrl` は `{ runId }` を返すルート。返り値 result はワークフローの returnValue
+ * （各ワークフローの結果オブジェクト。呼び出し側で .ok を確認する）。
+ */
+export async function startAndPollRun<T = any>(
+  startUrl: string,
+  body: unknown,
+  opts: {
+    onProgress?: (status: RunProgress) => void;
+    intervalMs?: number;
+    timeoutMs?: number;
+  } = {},
+): Promise<{ ok: true; result: T } | { ok: false; error: string }> {
+  const intervalMs = opts.intervalMs ?? 2000;
+  const timeoutMs = opts.timeoutMs ?? 6 * 60 * 1000; // クライアント側の上限（6分）
+  opts.onProgress?.("starting");
+
+  const startRes = await postJson<{ runId?: string }>(startUrl, body);
+  if (!startRes.ok) return { ok: false, error: startRes.error ?? "生成の開始に失敗しました。" };
+  const runId = startRes.data?.runId;
+  if (!runId) return { ok: false, error: "生成を開始できませんでした（runId を取得できませんでした）。" };
+
+  const startedAt = Date.now();
+  let notFoundStreak = 0;
+  while (Date.now() - startedAt < timeoutMs) {
+    await sleep(intervalMs);
+    const s = await getJson<{ status?: string; result?: T; error?: string; notFound?: boolean }>(
+      `/api/workflow-status?runId=${encodeURIComponent(runId)}`,
+    );
+    if (!s.ok || !s.data) continue; // 一時的な失敗はポーリング継続
+    const status = s.data.status;
+    if (status === "completed") return { ok: true, result: s.data.result as T };
+    if (status === "failed") return { ok: false, error: s.data.error ?? "生成に失敗しました。" };
+    if (s.data.notFound) {
+      // 開始直後でまだ見えていない可能性。数回は待つ。
+      if (++notFoundStreak > 10) {
+        return { ok: false, error: "生成タスクが見つかりませんでした。時間をおいて再試行してください。" };
+      }
+    } else {
+      notFoundStreak = 0;
+      opts.onProgress?.((status as RunProgress) ?? "running");
+    }
+  }
+  return {
+    ok: false,
+    error: "生成が時間内に完了しませんでした。素材を短くするか、時間をおいて再試行してください。",
+  };
 }

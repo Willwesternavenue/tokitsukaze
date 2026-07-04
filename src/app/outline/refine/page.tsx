@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { loadProject, replaceSelectedOutline } from "@/lib/storage";
-import { postJson } from "@/lib/apiClient";
+import { postJson, startAndPollRun } from "@/lib/apiClient";
+import type { SectionsWorkflowResult } from "@/workflows/sections";
 import { buildScreenplayExtraContext, getGenreConfig } from "@/lib/genreConfig";
 import { makeId } from "@/lib/ids";
 import type { Chapter, OutlineProposal, Project } from "@/lib/types";
@@ -172,25 +173,22 @@ export default function OutlineRefinePage() {
     try {
       // 既存の小見出しは作り直す（構成を編集したため）
       const cleared = { ...outline!, chapters: outline!.chapters.map((c) => ({ ...c, sections: [] })) };
-      const r = await postJson<{ outline?: OutlineProposal; parseFailed?: boolean }>(
-        "/api/generate-sections",
-        {
-          selectedOutline: cleared,
-          interviewNotes: project!.interviewNotes,
-          writingMemory: project!.writingMemory,
-          genre: project!.genre,
-          extraContext: buildScreenplayExtraContext(project!),
-        },
-      );
-      if (!r.ok) throw new Error(r.error ?? "小見出しの生成に失敗しました。");
-      if (r.data?.parseFailed) throw new Error("AI出力の解釈に失敗しました。もう一度お試しください。");
-      if (!r.data?.outline) throw new Error("APIから構成案が返りませんでした。");
-      const total = (r.data.outline.chapters ?? []).reduce(
+      const r = await startAndPollRun<SectionsWorkflowResult>("/api/generate-sections", {
+        selectedOutline: cleared,
+        interviewNotes: project!.interviewNotes,
+        writingMemory: project!.writingMemory,
+        genre: project!.genre,
+        extraContext: buildScreenplayExtraContext(project!),
+      });
+      if (!r.ok) throw new Error(r.error);
+      if (!r.result.ok) throw new Error("AI出力の解釈に失敗しました。もう一度お試しください。");
+      const nextOutline = r.result.outline;
+      const total = (nextOutline.chapters ?? []).reduce(
         (sum, c) => sum + (c.sections?.length ?? 0),
         0,
       );
       if (total === 0) throw new Error("小見出しが1件も生成されませんでした。もう一度お試しください。");
-      replaceSelectedOutline(r.data.outline);
+      replaceSelectedOutline(nextOutline);
       router.push("/writer");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

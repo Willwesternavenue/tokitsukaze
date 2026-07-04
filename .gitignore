@@ -12,3 +12,4 @@ next-env.d.ts
 # Workflow SDK ローカル state
 .workflow/
 
+.env*

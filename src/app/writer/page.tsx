@@ -25,7 +25,8 @@ import type {
   SectionDraft,
 } from "@/lib/types";
 import { exportProjectDocx, exportSectionDocx } from "@/lib/docx";
-import { postJson } from "@/lib/apiClient";
+import { postJson, startAndPollRun } from "@/lib/apiClient";
+import type { SectionsWorkflowResult } from "@/workflows/sections";
 import { buildScreenplayExtraContext, getGenreConfig } from "@/lib/genreConfig";
 
 type Selected = { chapter: Chapter; section: Section } | null;
@@ -388,22 +389,18 @@ export default function WriterPage() {
         ...project.selectedOutline,
         chapters: project.selectedOutline.chapters.map((c) => ({ ...c, sections: [] })),
       };
-      const r = await postJson<{ outline?: OutlineProposal; parseFailed?: boolean }>(
-        "/api/generate-sections",
-        {
-          selectedOutline: cleared,
-          interviewNotes: project.interviewNotes,
-          writingMemory: project.writingMemory,
-          genre: project.genre,
-          extraContext: buildScreenplayExtraContext(project),
-        },
-      );
-      if (!r.ok) throw new Error(r.error ?? "小見出しの生成に失敗しました。");
-      if (!r.data?.outline) throw new Error("APIから構成案が返りませんでした。");
-      if (r.data?.parseFailed) {
+      const r = await startAndPollRun<SectionsWorkflowResult>("/api/generate-sections", {
+        selectedOutline: cleared,
+        interviewNotes: project.interviewNotes,
+        writingMemory: project.writingMemory,
+        genre: project.genre,
+        extraContext: buildScreenplayExtraContext(project),
+      });
+      if (!r.ok) throw new Error(r.error);
+      if (!r.result.ok) {
         throw new Error("AI出力の解釈に失敗しました。もう一度お試しください。");
       }
-      const outline = r.data.outline;
+      const outline = r.result.outline;
       const totalSections = (outline.chapters ?? []).reduce(
         (sum: number, c: Chapter) => sum + (c.sections?.length ?? 0),
         0,

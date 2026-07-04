@@ -18,26 +18,15 @@ export async function POST(req: Request) {
   }
 
   try {
+    // 非同期実行: runId を即返し、クライアントは /api/workflow-status をポーリングする。
     const run = await start(sectionsWorkflow, [body]);
-    const result = await run.returnValue;
-    if (!result.ok) {
-      console.error(
-        `[generate-sections] workflow parseFailed (runId=${result.meta.runId}, attempts=${result.meta.attempts})`,
-      );
-      return NextResponse.json({
-        outline: result.outline,
-        parseFailed: true,
-        raw: result.raw,
-        runId: result.meta.runId,
-      });
-    }
-    return NextResponse.json({ outline: result.outline, runId: result.meta.runId });
+    return NextResponse.json({ runId: run.runId }, { status: 202 });
   } catch (e) {
     if (e instanceof AIConfigError) {
       return NextResponse.json({ error: e.message }, { status: 500 });
     }
     const msg = e instanceof Error ? e.message : String(e);
-    console.error("[generate-sections] workflow error", msg);
-    return NextResponse.json({ error: `AI呼び出しに失敗しました：${msg}` }, { status: 500 });
+    console.error("[generate-sections] start error", msg);
+    return NextResponse.json({ error: `生成の開始に失敗しました：${msg}` }, { status: 500 });
   }
 }

@@ -9,7 +9,8 @@ import {
   selectOutline,
   setOutlineProposals,
 } from "@/lib/storage";
-import { postJson } from "@/lib/apiClient";
+import { startAndPollRun } from "@/lib/apiClient";
+import type { OutlineWorkflowResult } from "@/workflows/outline";
 import { buildScreenplayExtraContext, getGenreConfig } from "@/lib/genreConfig";
 import type { OutlineProposal, Project } from "@/lib/types";
 
@@ -54,7 +55,7 @@ export default function OutlinePage() {
     try {
       const prompts = loadPrompts();
       const promptTemplate = prompts.find((p) => p.id === genreCfg.pipelinePrompts.outline);
-      const r = await postJson<{ proposals?: OutlineProposal[] }>("/api/generate-outline", {
+      const r = await startAndPollRun<OutlineWorkflowResult>("/api/generate-outline", {
         projectName: project.name,
         intervieweeName: project.intervieweeName,
         theme: project.theme,
@@ -65,12 +66,14 @@ export default function OutlinePage() {
         extraContext: buildScreenplayExtraContext(project),
       });
       if (!r.ok) {
-        setError(r.error ?? "再生成に失敗しました。");
+        setError(r.error);
         return;
       }
-      const proposals: OutlineProposal[] = Array.isArray(r.data?.proposals)
-        ? (r.data!.proposals as OutlineProposal[])
-        : [];
+      if (!r.result.ok) {
+        setError(r.result.error ?? "再生成に失敗しました。");
+        return;
+      }
+      const proposals: OutlineProposal[] = r.result.proposals;
       if (proposals.length === 0) {
         setError("AIが構成案を返しませんでした。");
         return;
