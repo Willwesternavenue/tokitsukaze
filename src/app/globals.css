@@ -1044,6 +1044,97 @@ hr.sep {
   font-weight: 500;
 }
 
+/* レビュー: タブ */
+.review-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.review-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-soft);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.review-tab:hover {
+  color: var(--text);
+  background: var(--panel-alt);
+}
+.review-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.review-tab-count {
+  display: inline-block;
+  min-width: 18px;
+  text-align: center;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: #eceff3;
+  color: var(--text-soft);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.review-tab.active .review-tab-count {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.review-tab-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.review-tab-dot.sev-error {
+  background: var(--danger);
+}
+.review-tab-dot.sev-warning {
+  background: var(--warn);
+}
+.review-tab-dot.sev-info {
+  background: var(--text-muted);
+}
+.review-tab-dot.sev-none {
+  background: var(--success);
+}
+.agent-tab-section {
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.agent-tab-section:first-child {
+  border-top: none;
+}
+.agent-tab-section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+.link-like {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+}
+.link-like:hover {
+  text-decoration: underline;
+}
+
 /* ===== 脚本: 尺ゲージ・シーン表示 ===== */
 .runtime-gauge {
   border: 1px solid var(--border);
