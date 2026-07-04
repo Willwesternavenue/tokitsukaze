@@ -45,7 +45,14 @@ export async function postJson<T = any>(
 export async function getJson<T = any>(url: string): Promise<ApiResult<T>> {
   let res: Response;
   try {
-    res = await fetch(url, { method: "GET", headers: { Accept: "application/json" } });
+    // ポーリングはキャッシュ厳禁。no-store に加え、URL にタイムスタンプを付けて
+    // ブラウザ/中間キャッシュが古い status（running 等）を返し続けるのを防ぐ。
+    const bust = `${url.includes("?") ? "&" : "?"}_ts=${Date.now()}`;
+    res = await fetch(url + bust, {
+      method: "GET",
+      headers: { Accept: "application/json", "Cache-Control": "no-cache" },
+      cache: "no-store",
+    });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return { ok: false, status: 0, data: null, error: `通信に失敗しました: ${msg}` };
