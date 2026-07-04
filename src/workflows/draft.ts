@@ -4,6 +4,7 @@ import type {
   Chapter,
   Project,
   PromptTemplate,
+  ReferenceWork,
   Section,
   SectionDraft,
 } from "@/lib/types";
@@ -17,10 +18,12 @@ import {
   characterVoiceStep,
   citationCheckStep,
   consistencyLiteStep,
+  continuityCheckStep,
   factCheckStep,
   logicCheckStep,
   proofreaderStep,
   readerExperienceStep,
+  repetitionCheckStep,
   runtimeCheckStep,
   screenplayFormatStep,
   seoCheckStep,
@@ -34,6 +37,8 @@ export type DraftWorkflowInput = {
   chapter: Chapter;
   section: Section;
   promptTemplate?: PromptTemplate;
+  /** 参照ライブラリで選択された作品カルテ（クライアントから渡す。空なら参照エージェントは走らない） */
+  referenceWorks?: ReferenceWork[];
 };
 
 export type DraftWorkflowResult = {
@@ -61,6 +66,7 @@ export async function draftWorkflow(input: DraftWorkflowInput): Promise<DraftWor
       project: input.project,
       chapter: input.chapter,
       section: input.section,
+      referenceWorks: input.referenceWorks ?? [],
     };
     const toggles = input.project.agentToggles ?? {};
     const enabled = (key: keyof typeof toggles) => toggles[key] !== false;
@@ -96,6 +102,11 @@ export async function draftWorkflow(input: DraftWorkflowInput): Promise<DraftWor
     if (input.project.genre === "screenplay") {
       if (enabled("format-check")) steps.push(screenplayFormatStep(ctx, runId));
       if (enabled("runtime-check")) steps.push(runtimeCheckStep(ctx, runId));
+    }
+    // 参照ライブラリ: 参照作品を1件以上選択している時のみ (全ジャンル)
+    if ((input.referenceWorks ?? []).length > 0) {
+      if (enabled("repetition-check")) steps.push(repetitionCheckStep(ctx, runId));
+      if (enabled("continuity-check")) steps.push(continuityCheckStep(ctx, runId));
     }
     agentReports = await Promise.all(steps);
   }
@@ -153,9 +164,12 @@ async function draftStep(
           : project.genre === "blog"
             ? buildBlogContext(project)
             : "";
-  const systemPromptFinal = genreContext
-    ? `${tpl.systemPrompt}\n\n${genreContext}`
-    : tpl.systemPrompt;
+  // 参照ライブラリ（全ジャンル共通・選択作品があれば）
+  const refContext = buildReferenceContext(input.referenceWorks ?? [], project.genre);
+  const systemPromptFinal =
+    tpl.systemPrompt +
+    (genreContext ? `\n\n${genreContext}` : "") +
+    (refContext ? `\n\n${refContext}` : "");
 
   const formatNote = `\n\n出力は次のJSON形式（余計な文字は禁止）：\n${tpl.outputFormat}`;
 
@@ -295,6 +309,39 @@ function buildBusinessContext(project: Project): string {
     "\n【守るべきこと】\n" +
       "- 統計・数値・研究結果を使う場合、上記の参考文献にあるものはそれを根拠として使い、無いものは factCheckPoints に「要出典」として必ず挙げること\n" +
       "- 用語は用語集の定義と矛盾しない使い方をすること",
+  );
+  return parts.join("\n\n");
+}
+
+// 参照ライブラリ: 選択された過去作品カルテを system prompt に注入する（全ジャンル共通）
+function buildReferenceContext(works: ReferenceWork[], genre: Project["genre"]): string {
+  if (works.length === 0) return "";
+  const isFiction = genre === "novel" || genre === "screenplay";
+  const parts: string[] = ["【参照ライブラリ：過去作品・参照作品】"];
+  for (const w of works) {
+    const block: string[] = [`■ ${w.title}（${w.kind === "own" ? "自作" : "参照"}）`];
+    if (w.styleProfile) block.push(`文体プロファイル: ${w.styleProfile}`);
+    if (w.canonFacts.length) block.push(`確定設定: ${w.canonFacts.slice(0, 12).join(" / ")}`);
+    if (w.keyClaims.length) block.push(`既出の主張・トピック: ${w.keyClaims.slice(0, 10).join(" / ")}`);
+    if (isFiction && w.characters?.length) {
+      block.push(
+        "登場人物:\n" +
+          w.characters
+            .map(
+              (c) =>
+                `  ・${c.name}（口調: ${c.voice || "不明"}）` +
+                (c.keyLines.length ? ` 過去のセリフ: ${c.keyLines.map((l) => `「${l}」`).join("、")}` : ""),
+            )
+            .join("\n"),
+      );
+    }
+    parts.push(block.join("\n"));
+  }
+  parts.push(
+    "\n【守るべきこと】\n" +
+      "- 上記の文体プロファイルを踏襲し、作品全体のトーンを揃える\n" +
+      "- 確定設定・登場人物の口調・過去のセリフと矛盾しない\n" +
+      "- 既出の主張・エピソードを単に繰り返さない（続編なら前作既知の説明は最小限に、新しい角度を出す）",
   );
   return parts.join("\n\n");
 }

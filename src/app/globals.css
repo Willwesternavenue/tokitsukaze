@@ -1077,6 +1077,57 @@ hr.sep {
   flex-shrink: 0;
 }
 
+/* ===== 参照ライブラリ ===== */
+.library-row {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  gap: 10px;
+  padding: 12px 4px;
+  border-top: 1px solid var(--border);
+  align-items: start;
+}
+.library-row:first-child {
+  border-top: none;
+}
+.library-row.selected {
+  background: var(--accent-soft);
+  border-radius: 3px;
+}
+.library-check {
+  padding-top: 2px;
+}
+.library-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.library-summary {
+  font-size: 12px;
+  color: var(--text-soft);
+  margin-top: 3px;
+}
+.library-detail {
+  margin-top: 8px;
+  padding: 10px;
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-size: 12px;
+}
+.library-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.mini-list {
+  margin: 2px 0 0;
+  padding-left: 16px;
+}
+.mini-list li {
+  margin: 2px 0;
+}
+
 /* ===== 人物相関図 ===== */
 .relations-legend {
   display: flex;

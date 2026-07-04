@@ -4,10 +4,12 @@ import { useEffect, useState } from "react";
 import {
   deleteProject,
   listProjects,
+  loadLibrary,
   loadProject,
   loadPrompts,
   renameProject,
   resetProject,
+  saveLibrary,
   savePrompts,
   importProject as saveImportedProject,
   updateProject,
@@ -60,7 +62,7 @@ export default function SettingsPage() {
 
   function handleExport() {
     if (!project) return;
-    exportProjectToJson(project, loadPrompts());
+    exportProjectToJson(project, loadPrompts(), loadLibrary());
     setInfo("JSONをダウンロードしました。");
   }
 

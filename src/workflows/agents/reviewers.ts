@@ -10,6 +10,7 @@ import type {
   AgentReportSummary,
   Chapter,
   Project,
+  ReferenceWork,
   Section,
   SectionDraft,
 } from "@/lib/types";
@@ -30,6 +31,7 @@ type AgentContext = {
   project: Project;
   chapter?: Chapter;
   section?: Section;
+  referenceWorks?: ReferenceWork[]; // 参照ライブラリで選択された作品カルテ
 };
 
 async function runReviewer(
@@ -218,6 +220,62 @@ const CITATION_CHECK: AgentDef = {
     body: ctx.draft.body,
     references: serializeReferences(ctx),
     glossary: serializeGlossary(ctx),
+  }),
+};
+
+// ===== 参照ライブラリ: 重複チェック / 一貫性チェック =====
+
+function serializeReferenceClaims(ctx: AgentContext): string {
+  const works = ctx.referenceWorks ?? [];
+  if (works.length === 0) return "（参照作品なし）";
+  return works
+    .map(
+      (w) =>
+        `■ ${w.title}（${w.kind === "own" ? "自作" : "参照"}）\n` +
+        `  要約: ${w.summary}\n` +
+        (w.keyClaims.length ? `  既出の主張: ${w.keyClaims.join(" / ")}` : ""),
+    )
+    .join("\n\n");
+}
+
+function serializeReferenceCanon(ctx: AgentContext): string {
+  const works = ctx.referenceWorks ?? [];
+  if (works.length === 0) return "（参照作品なし）";
+  return works
+    .map((w) => {
+      const chars = (w.characters ?? [])
+        .map(
+          (c) =>
+            `    ・${c.name}（口調: ${c.voice || "不明"}）` +
+            (c.keyLines.length ? ` 過去セリフ: ${c.keyLines.map((l) => `「${l}」`).join("、")}` : ""),
+        )
+        .join("\n");
+      return (
+        `■ ${w.title}\n` +
+        (w.canonFacts.length ? `  確定設定: ${w.canonFacts.join(" / ")}\n` : "") +
+        (chars ? `  登場人物:\n${chars}` : "")
+      );
+    })
+    .join("\n\n");
+}
+
+const REPETITION_CHECK: AgentDef = {
+  key: "repetition-check",
+  label: "重複",
+  promptId: "prompt-agent-repetition",
+  buildVars: (ctx) => ({
+    body: ctx.draft.body,
+    referenceClaims: serializeReferenceClaims(ctx),
+  }),
+};
+
+const CONTINUITY_CHECK: AgentDef = {
+  key: "continuity-check",
+  label: "一貫性（過去作）",
+  promptId: "prompt-agent-continuity",
+  buildVars: (ctx) => ({
+    body: ctx.draft.body,
+    referenceCanon: serializeReferenceCanon(ctx),
   }),
 };
 
@@ -448,4 +506,22 @@ export async function seoCheckStep(
 ): Promise<AgentReportSummary> {
   "use step";
   return runReviewer(SEO_CHECK, ctx, runId);
+}
+
+// ===== 参照ライブラリ（全ジャンル・参照作品選択時のみ）=====
+
+export async function repetitionCheckStep(
+  ctx: AgentContext,
+  runId: string,
+): Promise<AgentReportSummary> {
+  "use step";
+  return runReviewer(REPETITION_CHECK, ctx, runId);
+}
+
+export async function continuityCheckStep(
+  ctx: AgentContext,
+  runId: string,
+): Promise<AgentReportSummary> {
+  "use step";
+  return runReviewer(CONTINUITY_CHECK, ctx, runId);
 }

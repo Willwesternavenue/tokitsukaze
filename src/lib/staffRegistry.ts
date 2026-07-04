@@ -300,6 +300,27 @@ export const staffRegistry: StaffMeta[] = [
     agentKey: "seo-check",
   },
 
+  {
+    promptId: "prompt-agent-repetition",
+    staffLabel: "重複チェック（過去作品）",
+    group: "review",
+    kind: "staff",
+    description: "参照ライブラリの過去作品と照合し、既に述べた主張・エピソードの再掲を検出します。",
+    runsWhen: "本文生成後に自動実行（参照作品を1件以上選択している時のみ・全ジャンル）",
+    genres: "common",
+    agentKey: "repetition-check",
+  },
+  {
+    promptId: "prompt-agent-continuity",
+    staffLabel: "一貫性チェック（過去作品）",
+    group: "review",
+    kind: "staff",
+    description: "参照ライブラリの確定設定・キャラの口調/過去セリフと照合し、矛盾を検出します。続編に有効。",
+    runsWhen: "本文生成後に自動実行（参照作品を1件以上選択している時のみ・全ジャンル）",
+    genres: "common",
+    agentKey: "continuity-check",
+  },
+
   // ===== ルールブック =====
   {
     promptId: "prompt-style-rules",

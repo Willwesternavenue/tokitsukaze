@@ -52,7 +52,7 @@ async function downloadDoc(doc: Document, filename: string): Promise<void> {
 
 export async function exportSectionDocx(project: Project, draft: SectionDraft): Promise<void> {
   const doc = new Document({
-    creator: "聞き書き出版AI",
+    creator: "アキカゼ出版AI",
     title: `${draft.chapterTitle} / ${draft.sectionTitle}`,
     sections: [
       {
@@ -107,9 +107,9 @@ export async function exportProjectDocx(project: Project): Promise<void> {
   }
 
   const doc = new Document({
-    creator: "聞き書き出版AI",
+    creator: "アキカゼ出版AI",
     title: project.name,
     sections: [{ properties: {}, children }],
   });
-  await downloadDoc(doc, `聞き書き出版AI_全体原稿ドラフト_${fileSafe(project.name)}.docx`);
+  await downloadDoc(doc, `アキカゼ出版AI_全体原稿ドラフト_${fileSafe(project.name)}.docx`);
 }

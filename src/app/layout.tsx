@@ -5,8 +5,8 @@ import { Nav } from "@/components/Nav";
 import { ProjectSwitcher } from "@/components/ProjectSwitcher";
 
 export const metadata: Metadata = {
-  title: "聞き書き出版AI（デモ）",
-  description: "自費出版向け 取材メモ→章立て→本文生成のデモアプリ",
+  title: "アキカゼ出版AI（デモ）",
+  description: "自費出版・小説・ビジネス書・脚本・ブログ対応 AI編集システムのデモアプリ",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
@@ -16,7 +16,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <div className="app-shell">
           <header className="topbar">
             <div className="brand">
-              <span>聞き書き出版AI</span>
+              <span>アキカゼ出版AI</span>
               <span className="tag">DEMO</span>
             </div>
             <ProjectSwitcher />

@@ -1,7 +1,7 @@
 "use client";
 
 import { saveAs } from "file-saver";
-import type { Project, PromptTemplate } from "./types";
+import type { Project, PromptTemplate, ReferenceWork } from "./types";
 
 export const EXPORT_VERSION = "kikigaki-export-v1";
 
@@ -10,30 +10,36 @@ export type ProjectExport = {
   exportedAt: string;
   project: Project;
   prompts?: PromptTemplate[];
+  library?: ReferenceWork[]; // 参照ライブラリ（グローバル）も同梱
 };
 
 function fileSafe(name: string): string {
   return (name || "untitled").replace(/[\\\/:*?"<>|]/g, "_").trim();
 }
 
-export function exportProjectToJson(project: Project, prompts?: PromptTemplate[] | null): void {
+export function exportProjectToJson(
+  project: Project,
+  prompts?: PromptTemplate[] | null,
+  library?: ReferenceWork[] | null,
+): void {
   const payload: ProjectExport = {
     version: EXPORT_VERSION,
     exportedAt: new Date().toISOString(),
     project,
     prompts: prompts && prompts.length ? prompts : undefined,
+    library: library && library.length ? library : undefined,
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], {
     type: "application/json;charset=utf-8",
   });
   const date = new Date().toISOString().slice(0, 10);
-  const fname = `kikigaki_${fileSafe(project.name)}_${date}.json`;
+  const fname = `akikaze_${fileSafe(project.name)}_${date}.json`;
   saveAs(blob, fname);
 }
 
 export async function importProjectFromFile(
   file: File,
-): Promise<{ project: Project; prompts?: PromptTemplate[] }> {
+): Promise<{ project: Project; prompts?: PromptTemplate[]; library?: ReferenceWork[] }> {
   const text = await file.text();
   let data: any;
   try {
@@ -43,7 +49,7 @@ export async function importProjectFromFile(
   }
   if (data?.version !== EXPORT_VERSION) {
     throw new Error(
-      `ファイル形式が一致しません（${data?.version ?? "version 不明"}）。\n聞き書き出版AI のエクスポートファイルか確認してください。`,
+      `ファイル形式が一致しません（${data?.version ?? "version 不明"}）。\nアキカゼ出版AI のエクスポートファイルか確認してください。`,
     );
   }
   const project = data?.project;
@@ -54,5 +60,9 @@ export async function importProjectFromFile(
     Array.isArray(data?.prompts) && data.prompts.length > 0
       ? (data.prompts as PromptTemplate[])
       : undefined;
-  return { project: project as Project, prompts };
+  const library =
+    Array.isArray(data?.library) && data.library.length > 0
+      ? (data.library as ReferenceWork[])
+      : undefined;
+  return { project: project as Project, prompts, library };
 }

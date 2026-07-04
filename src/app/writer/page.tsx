@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  getSelectedReferenceWorks,
   loadProject,
   loadPrompts,
   replaceSelectedOutline,
@@ -132,6 +133,7 @@ export default function WriterPage() {
           chapter: selected.chapter,
           section: selected.section,
           promptTemplate,
+          referenceWorks: getSelectedReferenceWorks(project),
         },
       );
       if (!r.ok) throw new Error(r.error ?? "本文生成に失敗しました。");

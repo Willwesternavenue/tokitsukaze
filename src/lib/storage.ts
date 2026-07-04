@@ -15,6 +15,8 @@ const KEY_PROJECTS = "kikigaki:projects:v2";
 const KEY_CURRENT = "kikigaki:currentProjectId:v2";
 const KEY_OLD_PROJECT_V1 = "kikigaki:project:v1";
 const KEY_PROMPTS = "kikigaki:prompts:v1";
+// 参照ライブラリはプロジェクト横断のグローバル（プロンプトと同じパターン）
+const KEY_LIBRARY = "akikaze:library:v1";
 
 export function isBrowser(): boolean {
   return typeof window !== "undefined";
@@ -100,6 +102,9 @@ function mergeDefaults(p: Project): Project {
     glossary: Array.isArray((p as any).glossary) ? (p as any).glossary : [],
     screenplayMeta: (p as any).screenplayMeta ?? undefined,
     blogMeta: (p as any).blogMeta ?? undefined,
+    referenceWorkIds: Array.isArray((p as any).referenceWorkIds)
+      ? (p as any).referenceWorkIds
+      : [],
   };
 }
 
@@ -376,6 +381,54 @@ export function updateScreenplayMeta(meta: import("./types").ScreenplayMeta): Pr
 
 export function updateBlogMeta(meta: import("./types").BlogMeta): Project {
   return updateProject((p) => ({ ...p, blogMeta: meta }));
+}
+
+// ===== 参照ライブラリ（グローバル。プロジェクト横断）=====
+
+export function loadLibrary(): import("./types").ReferenceWork[] {
+  if (!isBrowser()) return [];
+  const existing = safeParse<import("./types").ReferenceWork[]>(localStorage.getItem(KEY_LIBRARY));
+  return existing && Array.isArray(existing) ? existing : [];
+}
+
+export function saveLibrary(works: import("./types").ReferenceWork[]): void {
+  if (!isBrowser()) return;
+  localStorage.setItem(KEY_LIBRARY, JSON.stringify(works));
+}
+
+export function addReferenceWork(work: import("./types").ReferenceWork): import("./types").ReferenceWork[] {
+  const next = [...loadLibrary(), work];
+  saveLibrary(next);
+  return next;
+}
+
+export function removeReferenceWork(id: string): import("./types").ReferenceWork[] {
+  const next = loadLibrary().filter((w) => w.id !== id);
+  saveLibrary(next);
+  // どのプロジェクトの選択からも外す
+  const arr = loadAll();
+  let changed = false;
+  const cleaned = arr.map((p) => {
+    if (p.referenceWorkIds?.includes(id)) {
+      changed = true;
+      return { ...p, referenceWorkIds: p.referenceWorkIds.filter((x) => x !== id) };
+    }
+    return p;
+  });
+  if (changed) saveAll(cleaned);
+  return next;
+}
+
+// このプロジェクトが参照する作品IDの選択
+export function setReferenceWorkIds(ids: string[]): Project {
+  return updateProject((p) => ({ ...p, referenceWorkIds: ids }));
+}
+
+/** 現在のプロジェクトが選択している参照作品のカルテ本体を返す */
+export function getSelectedReferenceWorks(project: Project): import("./types").ReferenceWork[] {
+  const ids = new Set(project.referenceWorkIds ?? []);
+  if (ids.size === 0) return [];
+  return loadLibrary().filter((w) => ids.has(w.id));
 }
 
 // ===== Prompts (global) =====

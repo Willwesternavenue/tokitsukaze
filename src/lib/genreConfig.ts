@@ -73,7 +73,10 @@ export const biographyConfig: GenreConfig = {
       description: "AI編集部の診断結果を集約して確認します。",
     },
   },
-  knowledge: [{ href: "/memory", label: "執筆メモリ" }],
+  knowledge: [
+    { href: "/memory", label: "執筆メモリ" },
+    { href: "/library", label: "参照ライブラリ" },
+  ],
   material: {
     panelTitle: "取材メモ",
     placeholder: "取材で聞き取った内容を、箇条書き／自由記述どちらでも貼り付けてください。",
@@ -117,6 +120,7 @@ export const novelConfig: GenreConfig = {
     { href: "/relations", label: "人物相関図" },
     { href: "/bible", label: "Story Bible" },
     { href: "/memory", label: "執筆メモリ" },
+    { href: "/library", label: "参照ライブラリ" },
   ],
   material: {
     panelTitle: "プロット / 素材メモ",
@@ -160,6 +164,7 @@ export const businessConfig: GenreConfig = {
   knowledge: [
     { href: "/references", label: "参考文献・用語集" },
     { href: "/memory", label: "執筆メモリ" },
+    { href: "/library", label: "参照ライブラリ" },
   ],
   material: {
     panelTitle: "取材・リサーチ素材",
@@ -210,6 +215,7 @@ export const screenplayConfig: GenreConfig = {
     { href: "/relations", label: "人物相関図" },
     { href: "/bible", label: "設定・ロケーション" },
     { href: "/memory", label: "執筆メモリ" },
+    { href: "/library", label: "参照ライブラリ" },
   ],
   material: {
     panelTitle: "ログライン・素材",
@@ -258,6 +264,7 @@ export const blogConfig: GenreConfig = {
   knowledge: [
     { href: "/seo", label: "キーワード・ペルソナ" },
     { href: "/memory", label: "執筆メモリ" },
+    { href: "/library", label: "参照ライブラリ" },
   ],
   material: {
     panelTitle: "ネタ・素材メモ",

@@ -6,9 +6,11 @@ import {
   deleteProject,
   importProject as saveImportedProject,
   listProjects,
+  loadLibrary,
   loadPrompts,
   loadProject,
   renameProject,
+  saveLibrary,
   savePrompts,
   switchProject,
 } from "@/lib/storage";
@@ -127,7 +129,8 @@ export function ProjectSwitcher(): JSX.Element {
     try {
       const p = loadProject();
       const prompts = loadPrompts();
-      exportProjectToJson(p, prompts);
+      const library = loadLibrary();
+      exportProjectToJson(p, prompts, library);
       setOpen(false);
     } catch (e) {
       alert("エクスポートに失敗しました: " + (e instanceof Error ? e.message : String(e)));
@@ -142,13 +145,24 @@ export function ProjectSwitcher(): JSX.Element {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const { project, prompts } = await importProjectFromFile(file);
+      const { project, prompts, library } = await importProjectFromFile(file);
       const importedAsNew = saveImportedProject(project, true);
       if (prompts && prompts.length > 0) {
         const overwritePrompts = confirm(
           "このファイルにはプロンプトテンプレートも含まれています。現在のプロンプトを上書きしますか？\n\nOK = 上書きする\nキャンセル = プロンプトは現状維持",
         );
         if (overwritePrompts) savePrompts(prompts);
+      }
+      if (library && library.length > 0) {
+        const mergeLib = confirm(
+          `このファイルには参照ライブラリ（${library.length}件）が含まれています。現在のライブラリに統合しますか？\n\nOK = 統合する\nキャンセル = 統合しない`,
+        );
+        if (mergeLib) {
+          const existing = loadLibrary();
+          const ids = new Set(existing.map((w) => w.id));
+          const merged = [...existing, ...library.filter((w) => !ids.has(w.id))];
+          saveLibrary(merged);
+        }
       }
       alert(`プロジェクト「${importedAsNew.name}」をインポートしました。`);
       setOpen(false);

@@ -104,6 +104,8 @@ export type Project = {
   screenplayMeta?: ScreenplayMeta;
   // ===== ブログ記事 =====
   blogMeta?: BlogMeta;
+  // ===== 参照ライブラリ（このプロジェクトが参照する作品のID。ライブラリ本体はグローバル）=====
+  referenceWorkIds?: string[];
   // ===== Nav 再構成: AIスタッフのトグルと診断結果の永続化 =====
   /** 自動レビュアーの有効/無効。未設定キーは有効扱い */
   agentToggles?: Partial<Record<AgentKey, boolean>>;
@@ -137,7 +139,10 @@ export type AgentKey =
   | "format-check"
   | "runtime-check"
   // ブログ記事専用
-  | "seo-check";
+  | "seo-check"
+  // 参照ライブラリ（全ジャンル・参照作品選択時のみ）
+  | "repetition-check"
+  | "continuity-check";
 
 export type AgentSeverity = "info" | "warning" | "error";
 
@@ -170,6 +175,29 @@ export type BlogMeta = {
   searchIntent: string;       // 検索意図（読者がこの検索で本当に知りたいこと）
   persona: string;            // 想定読者の像
   metaDescription: string;    // メタディスクリプション（AIが提案・編集可）
+};
+
+// ===== 参照ライブラリ（過去作品・参照作品の「作品カルテ」）=====
+
+export type ReferenceCharacterCard = {
+  name: string;
+  voice: string;       // 口調・語尾の特徴
+  keyLines: string[];  // 過去の重要セリフ（矛盾チェック用）
+  facts: string[];     // 設定・経歴
+};
+
+export type ReferenceWork = {
+  id: string;
+  title: string;
+  kind: "own" | "reference";   // 自作 / 参照作品
+  sourceFilename?: string;
+  addedAt: string;
+  charCount?: number;
+  summary: string;
+  styleProfile: string;        // 文体プロファイル（トーン・リズム・語彙・癖）
+  keyClaims: string[];         // 既出の主張・トピック（重複回避用）
+  canonFacts: string[];        // 確定設定（矛盾防止用）
+  characters?: ReferenceCharacterCard[]; // 小説・脚本のみ
 };
 
 // ===== 脚本モード =====
