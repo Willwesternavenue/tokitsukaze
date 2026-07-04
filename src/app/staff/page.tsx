@@ -6,6 +6,7 @@ import {
   loadPrompts,
   savePrompts,
   updateAgentToggle,
+  updateAgentTogglesBulk,
 } from "@/lib/storage";
 import { defaultPrompts } from "@/lib/samples";
 import {
@@ -86,6 +87,26 @@ export default function StaffPage() {
     return project?.agentToggles?.[meta.agentKey] !== false;
   }
 
+  // このプロジェクトで本文生成時に自動実行されるレビュアー（agentKey 持ち・現ジャンル対象）
+  const autoReviewers = useMemo(
+    () =>
+      staffRegistry.filter(
+        (s) =>
+          s.agentKey &&
+          (s.genres === "common" || (Array.isArray(s.genres) && s.genres.includes(genre))),
+      ),
+    [genre],
+  );
+  const activeReviewerCount = autoReviewers.filter((s) => isEnabled(s)).length;
+
+  function setAllReviewers(enabled: boolean) {
+    const patch: Record<string, boolean> = {};
+    for (const s of autoReviewers) if (s.agentKey) patch[s.agentKey] = enabled;
+    const next = updateAgentTogglesBulk(patch as any);
+    setProject(next);
+    setInfo(enabled ? "すべての自動レビュアーを有効にしました。" : "すべての自動レビュアーを無効にしました（トークン節約）。");
+  }
+
   function genreBadge(meta: StaffMeta): JSX.Element {
     if (meta.genres === "common") return <span className="badge gray">共通</span>;
     return (
@@ -148,9 +169,20 @@ export default function StaffPage() {
               {group === "rulebook" ? (
                 <span className="hint">実行されず、他のスタッフに自動注入されます</span>
               ) : group === "review" ? (
-                <span className="hint">自動実行のスタッフは有効/無効を切り替えできます</span>
+                <div className="flex" style={{ gap: 8 }}>
+                  <button className="btn sm" type="button" onClick={() => setAllReviewers(true)}>すべて有効</button>
+                  <button className="btn sm" type="button" onClick={() => setAllReviewers(false)}>すべて無効</button>
+                </div>
               ) : null}
             </div>
+            {group === "review" ? (
+              <div className="panel-body" style={{ paddingBottom: 0 }}>
+                <div className="alert info" style={{ marginBottom: 0 }}>
+                  本文生成1回あたり、有効な自動レビュアー <strong>{activeReviewerCount}</strong> / {autoReviewers.length} 個が並列で走ります。
+                  使わないレビュアーを無効にするとトークンを節約できます（設定はこのプロジェクトに保存されます）。
+                </div>
+              </div>
+            ) : null}
             <div className="panel-body dense">
               {members.map((meta) => {
                 const tpl = promptOf(meta);

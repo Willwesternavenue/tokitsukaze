@@ -414,6 +414,16 @@ export function updateAgentToggle(
   }));
 }
 
+/** 複数の自動レビュアーを一括で有効/無効にする */
+export function updateAgentTogglesBulk(
+  patch: Partial<Record<import("./types").AgentKey, boolean>>,
+): Project {
+  return updateProject((p) => ({
+    ...p,
+    agentToggles: { ...(p.agentToggles ?? {}), ...patch },
+  }));
+}
+
 export function saveSectionAgentReports(
   sectionKey: string,
   reports: import("./types").AgentReportSummary[],
