@@ -306,6 +306,54 @@ export function replaceSelectedOutline(outline: OutlineProposal): Project {
   return updateProject((p) => ({ ...p, selectedOutline: outline }));
 }
 
+// ===== 選択中構成の小見出し（section）を個別に編集 =====
+
+export function updateSectionInOutline(
+  chapterId: string,
+  sectionId: string,
+  patch: Partial<import("./types").Section>,
+): Project {
+  return updateProject((p) => {
+    if (!p.selectedOutline) return p;
+    const chapters = p.selectedOutline.chapters.map((c) =>
+      c.id === chapterId
+        ? {
+            ...c,
+            sections: (c.sections ?? []).map((s) =>
+              s.id === sectionId ? { ...s, ...patch } : s,
+            ),
+          }
+        : c,
+    );
+    return { ...p, selectedOutline: { ...p.selectedOutline, chapters } };
+  });
+}
+
+export function addSectionToChapter(chapterId: string, title = "新しい小見出し"): Project {
+  const sectionId = `section-${makeId("s")}`;
+  return updateProject((p) => {
+    if (!p.selectedOutline) return p;
+    const chapters = p.selectedOutline.chapters.map((c) =>
+      c.id === chapterId
+        ? { ...c, sections: [...(c.sections ?? []), { id: sectionId, title, summary: "" }] }
+        : c,
+    );
+    return { ...p, selectedOutline: { ...p.selectedOutline, chapters } };
+  });
+}
+
+export function removeSectionFromOutline(chapterId: string, sectionId: string): Project {
+  return updateProject((p) => {
+    if (!p.selectedOutline) return p;
+    const chapters = p.selectedOutline.chapters.map((c) =>
+      c.id === chapterId
+        ? { ...c, sections: (c.sections ?? []).filter((s) => s.id !== sectionId) }
+        : c,
+    );
+    return { ...p, selectedOutline: { ...p.selectedOutline, chapters } };
+  });
+}
+
 export function upsertDraft(draft: SectionDraft): Project {
   return updateProject((p) => {
     const idx = p.generatedSections.findIndex(

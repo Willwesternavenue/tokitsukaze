@@ -640,6 +640,26 @@ textarea.input {
   color: var(--text);
   background: var(--panel-alt);
   border-radius: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.chapter-add-btn {
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  width: 18px;
+  height: 18px;
+  line-height: 1;
+  padding: 0;
+  color: var(--text-soft);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.chapter-add-btn:hover {
+  background: #fff;
+  color: var(--accent);
+  border-color: var(--accent);
 }
 .toc .section-list {
   list-style: none;

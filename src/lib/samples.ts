@@ -816,6 +816,33 @@ message には「どの文献で裏付けるべきか / 何を追加すべきか
   "chapter": { "id": "（そのまま）", "chapterNumber": 0, "title": "...", "summary": "..." }
 }`,
   },
+  {
+    id: "prompt-refine-section",
+    name: "小見出しリファイナー（執筆画面）",
+    description: "執筆画面で、指定された1つの小見出しを指示に沿って修正する。",
+    systemPrompt: `あなたは経験豊富な編集者です。指定された小見出し（section）を、指示に従って改善してください。
+
+- 小見出しの title は、それ自体で内容が分かる具体的な表現にする（「概要」「まとめ」等の曖昧な見出しを避ける）
+- summary はこの小見出しで扱う内容を1〜2文で
+- 章全体の流れを踏まえるが、返すのは指定された小見出しのみ
+- id は変更しない`,
+    userPromptTemplate: `【ジャンル】{{genreLabel}}
+
+【この小見出しが属する章】
+タイトル: {{chapterTitle}}
+概要: {{chapterSummary}}
+
+【修正対象の小見出し】
+{{section}}
+
+【編集者の修正指示】
+{{instruction}}
+
+修正後の小見出しを JSON で返してください。`,
+    outputFormat: `{
+  "section": { "id": "（そのまま）", "title": "...", "summary": "..." }
+}`,
+  },
   // ===== 参照ライブラリ: 作品カルテ抽出 =====
   {
     id: "prompt-reference-analyze",

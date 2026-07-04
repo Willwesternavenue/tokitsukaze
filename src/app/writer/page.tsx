@@ -3,11 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  addSectionToChapter,
   getSelectedReferenceWorks,
   loadProject,
   loadPrompts,
+  removeSectionFromOutline,
   replaceSelectedOutline,
   saveSectionAgentReports,
+  updateSectionInOutline,
   upsertDraft,
   withStyleRules,
 } from "@/lib/storage";
@@ -40,6 +43,9 @@ export default function WriterPage() {
   const [reviewing, setReviewing] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [regenSections, setRegenSections] = useState(false);
+  const [editingHeading, setEditingHeading] = useState(false);
+  const [headingInstruction, setHeadingInstruction] = useState("");
+  const [refiningHeading, setRefiningHeading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -192,6 +198,77 @@ export default function WriterPage() {
     }
   }
 
+  // 小見出しの個別編集後、selected を最新の section 参照に同期する
+  function syncSelectedFrom(p: Project, chapterId: string, sectionId: string | null) {
+    const ch = p.selectedOutline?.chapters.find((c) => c.id === chapterId);
+    if (!ch) return;
+    const sec = sectionId ? ch.sections.find((s) => s.id === sectionId) : ch.sections[0];
+    if (sec) setSelected({ chapter: ch, section: sec });
+    else setSelected(null);
+  }
+
+  // 手動編集: 小見出しの title / summary
+  function handleEditHeading(patch: { title?: string; summary?: string }) {
+    if (!selected) return;
+    const next = updateSectionInOutline(selected.chapter.id, selected.section.id, patch);
+    setProject(next);
+    syncSelectedFrom(next, selected.chapter.id, selected.section.id);
+  }
+
+  // 手動: 章に小見出しを追加
+  function handleAddSection(chapterId: string) {
+    const next = addSectionToChapter(chapterId);
+    setProject(next);
+    const ch = next.selectedOutline?.chapters.find((c) => c.id === chapterId);
+    const added = ch?.sections[ch.sections.length - 1];
+    if (ch && added) setSelected({ chapter: ch, section: added });
+  }
+
+  // 手動: 小見出しを削除
+  function handleDeleteSection() {
+    if (!selected) return;
+    if (!confirm("この小見出しを削除します。生成済みの本文も含めて表示されなくなります。よろしいですか？")) return;
+    const chapterId = selected.chapter.id;
+    const next = removeSectionFromOutline(chapterId, selected.section.id);
+    setProject(next);
+    setEditingHeading(false);
+    syncSelectedFrom(next, chapterId, null);
+  }
+
+  // AI: この小見出しだけを修正
+  async function handleRefineHeading() {
+    if (!selected || !project) return;
+    const instruction = headingInstruction.trim();
+    if (!instruction) {
+      setError("小見出しの修正指示を入力してください。");
+      return;
+    }
+    setError(null);
+    setRefiningHeading(true);
+    try {
+      const r = await postJson<{ outline?: OutlineProposal }>("/api/refine-outline", {
+        outline: project.selectedOutline,
+        instruction,
+        scope: "section",
+        chapterId: selected.chapter.id,
+        sectionId: selected.section.id,
+        genreLabel: genreCfg.label,
+        unit: "小見出し",
+      });
+      if (!r.ok) throw new Error(r.error ?? "小見出しの修正に失敗しました。");
+      if (r.data?.outline) {
+        const next = replaceSelectedOutline(r.data.outline);
+        setProject(next);
+        syncSelectedFrom(next, selected.chapter.id, selected.section.id);
+        setHeadingInstruction("");
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRefiningHeading(false);
+    }
+  }
+
   async function handleRegenSections() {
     if (!project?.selectedOutline) return;
     setError(null);
@@ -334,10 +411,21 @@ export default function WriterPage() {
                 return (
                 <li key={c.id} className="chapter">
                   <div className="chapter-title">
-                    第{c.chapterNumber}章　{c.title}
+                    <span style={{ flex: 1 }}>第{c.chapterNumber}章　{c.title}</span>
                     {isScreenplay && chapterMinutes > 0 ? (
                       <span className="chapter-minutes">{Math.round(chapterMinutes)}分</span>
                     ) : null}
+                    <button
+                      className="chapter-add-btn"
+                      type="button"
+                      title="この章に小見出しを追加"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleAddSection(c.id);
+                      }}
+                    >
+                      ＋
+                    </button>
                   </div>
                   <ul className="section-list">
                     {(c.sections ?? []).length === 0 ? (
@@ -393,6 +481,13 @@ export default function WriterPage() {
                     <h2 style={{ fontSize: 15, marginTop: 2 }}>{selected.section.title}</h2>
                   </div>
                   <div className="row-actions">
+                    <button
+                      className={`btn ${editingHeading ? "primary" : ""}`}
+                      onClick={() => setEditingHeading((v) => !v)}
+                      type="button"
+                    >
+                      {editingHeading ? "編集を閉じる" : "小見出しを編集"}
+                    </button>
                     {currentDraft ? (
                       <button
                         className="btn"
@@ -433,6 +528,60 @@ export default function WriterPage() {
                     </button>
                   </div>
                 </div>
+                {editingHeading ? (
+                  <div className="panel-body" style={{ borderBottom: "1px solid var(--border)", background: "var(--panel-alt)" }}>
+                    <div className="field" style={{ marginBottom: 8 }}>
+                      <label>小見出しタイトル</label>
+                      <input
+                        className="input"
+                        type="text"
+                        value={selected.section.title}
+                        onChange={(e) => handleEditHeading({ title: e.target.value })}
+                      />
+                    </div>
+                    <div className="field" style={{ marginBottom: 8 }}>
+                      <label>この小見出しで扱う内容（概要）</label>
+                      <textarea
+                        className="input"
+                        rows={2}
+                        value={selected.section.summary ?? ""}
+                        onChange={(e) => handleEditHeading({ summary: e.target.value })}
+                        placeholder="本文生成の指針になります"
+                      />
+                    </div>
+                    <div className="flex" style={{ alignItems: "flex-start" }}>
+                      <input
+                        className="input"
+                        type="text"
+                        value={headingInstruction}
+                        onChange={(e) => setHeadingInstruction(e.target.value)}
+                        placeholder="AIで小見出しを調整する指示（例：もっと具体的に / 読者の疑問形に）"
+                        style={{ flex: 1 }}
+                      />
+                      <button
+                        className="btn"
+                        type="button"
+                        onClick={handleRefineHeading}
+                        disabled={refiningHeading}
+                        style={{ whiteSpace: "nowrap" }}
+                      >
+                        {refiningHeading ? <span className="spinner" /> : null}
+                        AIで修正
+                      </button>
+                      <button
+                        className="btn danger"
+                        type="button"
+                        onClick={handleDeleteSection}
+                        style={{ whiteSpace: "nowrap" }}
+                      >
+                        削除
+                      </button>
+                    </div>
+                    <p className="help" style={{ marginTop: 8 }}>
+                      小見出しを直したら「本文を{currentDraft ? "再" : ""}生成」で、新しい小見出しに沿った本文を作れます。
+                    </p>
+                  </div>
+                ) : null}
                 <div className="panel-body">
                   {!currentDraft ? (
                     <div className="empty-state">
