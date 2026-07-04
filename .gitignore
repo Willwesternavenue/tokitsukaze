@@ -13,3 +13,6 @@ next-env.d.ts
 .workflow/
 
 .env*
+
+# 生成物（プレゼン等のバイナリはリポジトリに含めない）
+*.pptx
