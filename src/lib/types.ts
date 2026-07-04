@@ -123,6 +123,8 @@ export type Project = {
   agentToggles?: Partial<Record<AgentKey, boolean>>;
   /** "chapterId::sectionId" → 直近の診断結果。/review 画面の集約元 */
   sectionAgentReports?: Record<string, AgentReportSummary[]>;
+  /** 上と同じキー → ひとつ前の診断結果。再生成後の「解決済み」判定に使う */
+  sectionAgentReportsPrev?: Record<string, AgentReportSummary[]>;
 };
 
 export type ReviewResult = {

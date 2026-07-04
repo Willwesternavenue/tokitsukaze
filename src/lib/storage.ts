@@ -98,6 +98,7 @@ function mergeDefaults(p: Project): Project {
     storyBible: { ...emptyStoryBible, ...((p as any).storyBible || {}) },
     agentToggles: { ...((p as any).agentToggles || {}) },
     sectionAgentReports: { ...((p as any).sectionAgentReports || {}) },
+    sectionAgentReportsPrev: { ...((p as any).sectionAgentReportsPrev || {}) },
     references: Array.isArray((p as any).references) ? (p as any).references : [],
     glossary: Array.isArray((p as any).glossary) ? (p as any).glossary : [],
     screenplayMeta: (p as any).screenplayMeta ?? undefined,
@@ -417,10 +418,14 @@ export function saveSectionAgentReports(
   sectionKey: string,
   reports: import("./types").AgentReportSummary[],
 ): Project {
-  return updateProject((p) => ({
-    ...p,
-    sectionAgentReports: { ...(p.sectionAgentReports ?? {}), [sectionKey]: reports },
-  }));
+  return updateProject((p) => {
+    const prev = { ...(p.sectionAgentReportsPrev ?? {}) };
+    const cur = { ...(p.sectionAgentReports ?? {}) };
+    // 再生成時: いまの診断をひとつ前に退避してから新しい診断を入れる
+    if (cur[sectionKey]) prev[sectionKey] = cur[sectionKey];
+    cur[sectionKey] = reports;
+    return { ...p, sectionAgentReports: cur, sectionAgentReportsPrev: prev };
+  });
 }
 
 // ===== ビジネス書: 参考文献・用語集 =====

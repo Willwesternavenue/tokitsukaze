@@ -15,9 +15,18 @@ type SectionEntry = {
   sectionTitle: string;
   chapterNumber: number;
   reports: AgentReportSummary[];
+  prevByAgent: Map<string, number>; // agent → 前回の指摘件数
   totalFindings: number;
   worst: Severity;
 };
+
+// エージェント×節の状態
+type FindingStatus = "resolved" | "improved" | "open" | "clean";
+function agentStatus(current: number, prev: number | undefined): FindingStatus {
+  if (current === 0) return prev && prev > 0 ? "resolved" : "clean";
+  if (prev != null && current < prev) return "improved";
+  return "open";
+}
 
 function worstSeverity(findings: AgentFinding[]): Severity {
   if (findings.some((f) => f.severity === "error")) return "error";
@@ -45,6 +54,7 @@ export default function ReviewPage() {
   const sections: SectionEntry[] = useMemo(() => {
     if (!project) return [];
     const reports = project.sectionAgentReports ?? {};
+    const prevReports = project.sectionAgentReportsPrev ?? {};
     const entries: SectionEntry[] = [];
     for (const [key, reps] of Object.entries(reports)) {
       if (!reps || reps.length === 0) continue;
@@ -54,6 +64,8 @@ export default function ReviewPage() {
       );
       const chapter = project.selectedOutline?.chapters.find((c) => c.id === chapterId);
       const allFindings = reps.flatMap((r) => r.findings);
+      const prevByAgent = new Map<string, number>();
+      for (const pr of prevReports[key] ?? []) prevByAgent.set(pr.agent, pr.findings.length);
       entries.push({
         key,
         chapterTitle: draft?.chapterTitle ?? chapter?.title ?? chapterId,
@@ -63,6 +75,7 @@ export default function ReviewPage() {
           sectionId,
         chapterNumber: chapter?.chapterNumber ?? 0,
         reports: reps,
+        prevByAgent,
         totalFindings: allFindings.length,
         worst: worstSeverity(allFindings),
       });
@@ -187,7 +200,10 @@ export default function ReviewPage() {
                       </button>
                       {expanded ? (
                         <div className="grid grid-2" style={{ marginTop: 10 }}>
-                          {s.reports.map((r) => (
+                          {s.reports.map((r) => {
+                            const prev = s.prevByAgent.get(r.agent);
+                            const status = agentStatus(r.findings.length, prev);
+                            return (
                             <div key={r.agent} className="agent-detail-card">
                               <div className="agent-detail-header">
                                 <button
@@ -198,13 +214,13 @@ export default function ReviewPage() {
                                 >
                                   {r.label || agentLabel(r.agent)}
                                 </button>
-                                <span className="muted" style={{ fontSize: 11 }}>
-                                  {r.meta.parseFailed ? "AI応答をパースできず" : `${r.findings.length}件`}
-                                </span>
+                                <StatusBadge status={status} current={r.findings.length} prev={prev} parseFailed={r.meta.parseFailed} />
                               </div>
                               <ul className="list-block">
                                 {r.findings.length === 0 && !r.meta.parseFailed ? (
-                                  <li className="muted" style={{ fontSize: 11 }}>指摘なし</li>
+                                  <li className="muted" style={{ fontSize: 11 }}>
+                                    {status === "resolved" ? "前回の指摘は解決されました。" : "指摘なし"}
+                                  </li>
                                 ) : null}
                                 {r.findings.map((f, i) => (
                                   <li key={i} className={`finding severity-${f.severity}`}>
@@ -214,7 +230,8 @@ export default function ReviewPage() {
                                 ))}
                               </ul>
                             </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       ) : null}
                     </div>
@@ -243,16 +260,25 @@ function AgentTabView({
   label: string;
   sections: SectionEntry[];
 }) {
-  // このエージェントが指摘を出した節だけを抽出
+  // このエージェントの結果を、指摘あり / 解決済み / 指摘なし に仕分け
   const withFindings: { entry: SectionEntry; report: AgentReportSummary }[] = [];
+  const resolved: SectionEntry[] = [];
   let cleanCount = 0;
   let parseFailedCount = 0;
   for (const s of sections) {
     const r = s.reports.find((rr) => rr.agent === agent);
     if (!r) continue;
-    if (r.meta.parseFailed) parseFailedCount += 1;
-    if (r.findings.length > 0) withFindings.push({ entry: s, report: r });
-    else if (!r.meta.parseFailed) cleanCount += 1;
+    if (r.meta.parseFailed) {
+      parseFailedCount += 1;
+      continue;
+    }
+    if (r.findings.length > 0) {
+      withFindings.push({ entry: s, report: r });
+    } else {
+      const prev = s.prevByAgent.get(agent);
+      if (prev && prev > 0) resolved.push(s);
+      else cleanCount += 1;
+    }
   }
 
   return (
@@ -260,39 +286,89 @@ function AgentTabView({
       <div className="panel-header">
         <h2>{label}</h2>
         <span className="hint">
-          指摘あり {withFindings.length} 節 / 指摘なし {cleanCount} 節
+          指摘あり {withFindings.length} 節 / 解決済み {resolved.length} 節 / 指摘なし {cleanCount} 節
           {parseFailedCount ? ` / 応答エラー ${parseFailedCount} 節` : ""}
         </span>
       </div>
       <div className="panel-body dense">
-        {withFindings.length === 0 ? (
+        {withFindings.length === 0 && resolved.length === 0 ? (
           <div className="empty-state">
             {label} の指摘はありません。診断済みの節はすべて問題なしと判定されています。
           </div>
         ) : (
-          withFindings.map(({ entry, report }) => (
-            <div key={entry.key} className="agent-tab-section">
-              <div className="agent-tab-section-head">
-                <span className={`badge ${severityBadgeClass(worstSeverity(report.findings))}`}>
-                  {report.findings.length} 件
-                </span>
-                <span className="review-section-title">
-                  {entry.chapterTitle} ／ {entry.sectionTitle}
-                </span>
-              </div>
-              <ul className="list-block">
-                {report.findings.map((f, i) => (
-                  <li key={i} className={`finding severity-${f.severity}`}>
-                    <div className="finding-message">{f.message}</div>
-                    {f.loc ? <div className="finding-loc">「{f.loc}」</div> : null}
-                  </li>
+          <>
+            {withFindings.map(({ entry, report }) => {
+              const prev = entry.prevByAgent.get(agent);
+              const improved = prev != null && report.findings.length < prev;
+              return (
+                <div key={entry.key} className="agent-tab-section">
+                  <div className="agent-tab-section-head">
+                    <span className={`badge ${severityBadgeClass(worstSeverity(report.findings))}`}>
+                      {report.findings.length} 件
+                    </span>
+                    {improved ? (
+                      <span className="badge warn" style={{ fontSize: 10 }}>改善 {prev}→{report.findings.length}</span>
+                    ) : null}
+                    <span className="review-section-title">
+                      {entry.chapterTitle} ／ {entry.sectionTitle}
+                    </span>
+                  </div>
+                  <ul className="list-block">
+                    {report.findings.map((f, i) => (
+                      <li key={i} className={`finding severity-${f.severity}`}>
+                        <div className="finding-message">{f.message}</div>
+                        {f.loc ? <div className="finding-loc">「{f.loc}」</div> : null}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })}
+            {resolved.length > 0 ? (
+              <div style={{ marginTop: withFindings.length ? 12 : 0 }}>
+                <div className="muted" style={{ fontSize: 11, marginBottom: 4 }}>再生成で解決した節</div>
+                {resolved.map((entry) => (
+                  <div key={entry.key} className="agent-tab-section">
+                    <div className="agent-tab-section-head">
+                      <span className="badge success" style={{ fontSize: 10 }}>解決済み</span>
+                      <span className="review-section-title">
+                        {entry.chapterTitle} ／ {entry.sectionTitle}
+                      </span>
+                      <span className="muted" style={{ fontSize: 11, marginLeft: "auto" }}>
+                        前回 {entry.prevByAgent.get(agent)} 件 → 0 件
+                      </span>
+                    </div>
+                  </div>
                 ))}
-              </ul>
-            </div>
-          ))
+              </div>
+            ) : null}
+          </>
         )}
       </div>
     </div>
+  );
+}
+
+function StatusBadge({
+  status,
+  current,
+  prev,
+  parseFailed,
+}: {
+  status: FindingStatus;
+  current: number;
+  prev: number | undefined;
+  parseFailed?: boolean;
+}) {
+  if (parseFailed) return <span className="badge gray" style={{ fontSize: 10 }}>応答エラー</span>;
+  if (status === "resolved") return <span className="badge success" style={{ fontSize: 10 }}>解決済み</span>;
+  if (status === "improved")
+    return <span className="badge warn" style={{ fontSize: 10 }}>改善 {prev}→{current}件</span>;
+  if (status === "clean") return <span className="muted" style={{ fontSize: 11 }}>指摘なし</span>;
+  return (
+    <span className="muted" style={{ fontSize: 11 }}>
+      {current}件{prev != null && current > prev ? `（前回${prev}）` : ""}
+    </span>
   );
 }
 
