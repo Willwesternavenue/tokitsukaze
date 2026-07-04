@@ -142,6 +142,12 @@ export default function OutlineInterviewPage() {
       </div>
 
       {error ? <div className="alert" style={{ marginBottom: 16 }}>{error}</div> : null}
+      {generating ? (
+        <div className="alert info" style={{ marginBottom: 16 }}>
+          章立てを生成しています。サーバ側でAIが処理するため、数十秒〜数分かかることがあります。
+          この画面を開いたままお待ちください（完了すると自動で構成案の画面に進みます）。
+        </div>
+      ) : null}
 
       <div className="panel">
         <div className="panel-header">
