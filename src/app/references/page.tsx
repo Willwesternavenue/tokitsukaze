@@ -26,17 +26,17 @@ export default function ReferencesPage() {
     );
   }
 
-  if (project.genre !== "business") {
+  if (project.genre !== "business" && project.genre !== "news") {
     return (
       <>
         <div className="page-header">
           <div>
             <h1>参考文献・用語集</h1>
-            <p className="subtitle">この画面はビジネス書モードのプロジェクトでのみ使えます。</p>
+            <p className="subtitle">この画面はビジネス書・ニュース記事モードのプロジェクトでのみ使えます。</p>
           </div>
         </div>
         <div className="empty-state">
-          現在のプロジェクトは「{project.genre === "novel" ? "小説" : "聞き書き"}」モードです。
+          現在のプロジェクトは「{project.genre === "novel" ? "小説" : project.genre === "biography" ? "聞き書き" : project.genre}」モードです。
           <div style={{ marginTop: 12 }}>
             <Link href="/settings" className="btn primary">設定でモードを変更</Link>
           </div>
@@ -44,6 +44,8 @@ export default function ReferencesPage() {
       </>
     );
   }
+
+  const isNews = project.genre === "news";
 
   const references = project.references ?? [];
   const glossary = project.glossary ?? [];
@@ -62,9 +64,11 @@ export default function ReferencesPage() {
     <>
       <div className="page-header">
         <div>
-          <h1>参考文献・用語集</h1>
+          <h1>{isNews ? "取材源・出典" : "参考文献・用語集"}</h1>
           <p className="subtitle">
-            登録した文献と用語は、本文執筆と出典チェックエージェントに自動で渡されます。
+            {isNews
+              ? "登録した取材源・出典は、記事執筆と事実確認エージェントに自動で渡されます。"
+              : "登録した文献と用語は、本文執筆と出典チェックエージェントに自動で渡されます。"}
           </p>
         </div>
       </div>

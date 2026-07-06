@@ -20,7 +20,11 @@ import {
   consistencyLiteStep,
   continuityCheckStep,
   factCheckStep,
+  headlineLeadCheckStep,
   logicCheckStep,
+  neutralityCheckStep,
+  omissionCheckStep,
+  orthographyCheckStep,
   proofreaderStep,
   readerExperienceStep,
   repetitionCheckStep,
@@ -29,8 +33,9 @@ import {
   seoCheckStep,
   styleGuardianStep,
   tensionStep,
+  terminologyCheckStep,
 } from "./agents/reviewers";
-import { mediaTypeLabel } from "@/lib/genreConfig";
+import { langLabel, mediaTypeLabel, newsTypeLabel, workTypeLabel } from "@/lib/genreConfig";
 
 export type DraftWorkflowInput = {
   project: Project;
@@ -71,27 +76,44 @@ export async function draftWorkflow(input: DraftWorkflowInput): Promise<DraftWor
     const toggles = input.project.agentToggles ?? {};
     const enabled = (key: keyof typeof toggles) => toggles[key] !== false;
 
+    // 翻訳書: 整合性・読者体験は原稿創作向けの観点なのでスキップし、翻訳専用チェックに置き換える
+    const isTranslation = input.project.genre === "translation";
+
     const steps: Promise<AgentReportSummary>[] = [];
     if (enabled("proofreader")) steps.push(proofreaderStep(ctx, runId));
     if (enabled("style-guardian")) steps.push(styleGuardianStep(ctx, runId));
-    if (enabled("consistency-lite")) steps.push(consistencyLiteStep(ctx, runId));
-    if (enabled("reader-experience")) steps.push(readerExperienceStep(ctx, runId));
+    if (!isTranslation) {
+      if (enabled("consistency-lite")) steps.push(consistencyLiteStep(ctx, runId));
+      if (enabled("reader-experience")) steps.push(readerExperienceStep(ctx, runId));
+    }
     // 小説・脚本: キャラクター一貫性 + 緊張感
     if (input.project.genre === "novel" || input.project.genre === "screenplay") {
       if (enabled("character-voice")) steps.push(characterVoiceStep(ctx, runId));
       if (enabled("tension-checker")) steps.push(tensionStep(ctx, runId));
     }
-    // 実話・実用系 (聞き書き / ビジネス書 / ブログ) は校閲 (事実確認) を追加。創作の小説では不要
+    // 実話・実用系 (聞き書き / ビジネス書 / ブログ / ニュース) は校閲 (事実確認) を追加。創作の小説では不要
     if (
       input.project.genre === "biography" ||
       input.project.genre === "business" ||
-      input.project.genre === "blog"
+      input.project.genre === "blog" ||
+      input.project.genre === "news"
     ) {
       if (enabled("fact-check")) steps.push(factCheckStep(ctx, runId));
     }
     // ブログ専任: SEO・検索意図チェック
     if (input.project.genre === "blog") {
       if (enabled("seo-check")) steps.push(seoCheckStep(ctx, runId));
+    }
+    // ニュース専任: 見出し・リード整合 + 中立性・両論
+    if (input.project.genre === "news") {
+      if (enabled("headline-lead-check")) steps.push(headlineLeadCheckStep(ctx, runId));
+      if (enabled("neutrality-check")) steps.push(neutralityCheckStep(ctx, runId));
+    }
+    // 翻訳書専任: 訳抜け + 用語統一 + 表記揺れ（論文モードでも流用予定）
+    if (isTranslation) {
+      if (enabled("omission-check")) steps.push(omissionCheckStep(ctx, runId));
+      if (enabled("terminology-check")) steps.push(terminologyCheckStep(ctx, runId));
+      if (enabled("orthography-check")) steps.push(orthographyCheckStep(ctx, runId));
     }
     // ビジネス書専任: 論理構成チェック + 出典チェック
     if (input.project.genre === "business") {
@@ -133,6 +155,9 @@ async function draftStep(
     .map((d) => `■ ${d.chapterTitle} / ${d.sectionTitle}\n${d.body.slice(0, 240)}`)
     .join("\n\n");
 
+  // 翻訳書: 構成順で直前にあたる生成済みセグメントの訳文末尾（文体・用語の接続用）
+  const previousTail = findPreviousDraftTail(project, chapter, section);
+
   const userPrompt = renderTemplate(tpl.userPromptTemplate, {
     projectName: project.name,
     intervieweeName: project.intervieweeName,
@@ -150,6 +175,11 @@ async function draftStep(
     chapterSummary: chapter.summary ?? "",
     sectionTitle: section.title,
     sectionSummary: section.summary ?? "",
+    // ===== 翻訳書モード用の変数（他ジャンルのテンプレでは未使用のまま無害） =====
+    sourceText: section.sourceText ?? "",
+    sourceLangLabel: langLabel(project.translationMeta?.sourceLang),
+    targetLangLabel: langLabel(project.translationMeta?.targetLang),
+    previousTail: previousTail || "（最初のセグメントです）",
   });
 
   // ジャンル別コンテキストを system prompt の末尾に差し込む
@@ -163,7 +193,11 @@ async function draftStep(
           ? buildScreenplayContext(project, section)
           : project.genre === "blog"
             ? buildBlogContext(project)
-            : "";
+            : project.genre === "news"
+              ? buildNewsContext(project)
+              : project.genre === "translation"
+                ? buildTranslationContext(project)
+                : "";
   // 参照ライブラリ（全ジャンル共通・選択作品があれば）
   const refContext = buildReferenceContext(input.referenceWorks ?? [], project.genre);
   const systemPromptFinal =
@@ -342,6 +376,121 @@ function buildReferenceContext(works: ReferenceWork[], genre: Project["genre"]):
       "- 上記の文体プロファイルを踏襲し、作品全体のトーンを揃える\n" +
       "- 確定設定・登場人物の口調・過去のセリフと矛盾しない\n" +
       "- 既出の主張・エピソードを単に繰り返さない（続編なら前作既知の説明は最小限に、新しい角度を出す）",
+  );
+  return parts.join("\n\n");
+}
+
+// 構成順で「現在のセクションの直前」にあたる生成済みドラフトの本文末尾を返す（翻訳の文体接続用）
+function findPreviousDraftTail(project: Project, chapter: Chapter, section: Section): string {
+  const outline = project.selectedOutline;
+  if (!outline) return "";
+  const flat: { chapterId: string; sectionId: string }[] = [];
+  for (const c of outline.chapters) {
+    for (const s of c.sections ?? []) flat.push({ chapterId: c.id, sectionId: s.id });
+  }
+  const idx = flat.findIndex((x) => x.chapterId === chapter.id && x.sectionId === section.id);
+  for (let i = (idx < 0 ? flat.length : idx) - 1; i >= 0; i--) {
+    const d = project.generatedSections.find(
+      (g) => g.chapterId === flat[i].chapterId && g.sectionId === flat[i].sectionId,
+    );
+    if (d?.body?.trim()) return d.body.slice(-600);
+  }
+  return "";
+}
+
+// ニュース: 記事仕様・取材源を system prompt に注入する
+function buildNewsContext(project: Project): string {
+  const m = project.newsMeta;
+  const refs = project.references ?? [];
+  const parts: string[] = ["【ニュース記事モード：記事仕様】"];
+  parts.push(
+    [
+      `- 想定媒体: ${m?.outlet || "（未設定）"}`,
+      `- 記事種別: ${m ? newsTypeLabel(m.newsType) : "（未設定）"}`,
+      `- 切り口・アングル: ${m?.angle || "（未設定）"}`,
+      `- 想定読者: ${m?.audience || "（未設定）"}`,
+    ].join("\n"),
+  );
+  if (refs.length > 0) {
+    parts.push("## 取材源・出典（登録済み）");
+    parts.push(
+      refs
+        .map(
+          (r) =>
+            `- ${r.title}${r.author ? ` / ${r.author}` : ""}${r.source ? `（${r.source}）` : ""}${
+              r.year ? ` ${r.year}` : ""
+            }${r.notes ? ` — ${r.notes}` : ""}`,
+        )
+        .join("\n"),
+    );
+  }
+  parts.push(
+    "\n【守るべきこと】\n" +
+      "- 事実の出どころを本文で明示する。上記の取材源にないものは factCheckPoints に「要出典」として挙げる\n" +
+      "- 記事種別に応じた構成規律（ストレート=逆ピラミッド、解説=疑問への回答順）を守る\n" +
+      "- 事実と論評を分離し、伝聞は断定しない",
+  );
+  return parts.join("\n\n");
+}
+
+// 翻訳書: 対訳表・文体方針・原文種別の規律を system prompt に注入する
+// （論文モード実装時は workType="paper" の規律をそのまま流用する想定）
+function buildTranslationContext(project: Project): string {
+  const meta = project.translationMeta;
+  const terms = project.termPairs ?? [];
+  const parts: string[] = ["【翻訳書モード：翻訳指示】"];
+
+  parts.push(
+    [
+      `- 翻訳方向: ${langLabel(meta?.sourceLang)} → ${langLabel(meta?.targetLang)}`,
+      `- 原文の種別: ${workTypeLabel(meta?.workType)}`,
+      meta?.stylePolicy ? `- 文体方針: ${meta.stylePolicy}` : "- 文体方針: （未設定。標準的な出版翻訳の文体で）",
+    ].join("\n"),
+  );
+
+  if (terms.length > 0) {
+    const sorted = [...terms].sort((a, b) =>
+      a.status === b.status ? 0 : a.status === "confirmed" ? -1 : 1,
+    );
+    parts.push("## 対訳表（この訳語・表記を必ず使う）");
+    parts.push(
+      sorted
+        .slice(0, 80)
+        .map(
+          (t) =>
+            `- ${t.source} → ${t.target}${t.variants?.length ? `（使わない表記: ${t.variants.join("、")}）` : ""}${
+              t.notes ? ` — ${t.notes}` : ""
+            }`,
+        )
+        .join("\n"),
+    );
+  }
+
+  const workType = meta?.workType ?? "book";
+  const typeRules =
+    workType === "paper"
+      ? "- 学術論文として術語を厳密に訳す。定訳のある術語は定訳を使う\n" +
+        "- 引用・数式・図表参照（Figure 1, Table 2 等）・文献参照（[12], (Smith, 2020) 等）は原文の形式のまま保持する\n" +
+        "- ヘッジ表現（may, suggest, likely）の強さを訳文でも正確に保つ。断定への格上げは禁止\n" +
+        "- 「である」調で統一する"
+      : workType === "fiction"
+        ? "- 登場人物の声（口調・語彙・リズム）を訳文で作る。人物ごとの話し方を一貫させる\n" +
+          "- 敬称・呼称（Mr./‑san、あだ名、二人称）の方針を一貫させる\n" +
+          "- 直訳で死ぬ比喩・言葉遊びは、効果の等価性を優先して訳す（情報の増減は editorNotes に記録）\n" +
+          "- 地の文とセリフの文体を区別する"
+        : workType === "article"
+          ? "- 記事・ドキュメントとして簡潔で明瞭な訳文にする\n" +
+            "- 見出し・箇条書き・強調などの構造を原文どおり保持する\n" +
+            "- UI用語・コマンド・コードは翻訳せず原文のまま残す"
+          : "- 一般書籍として、正確さを保ちながら日本語（目標言語）として自然に読める訳文にする\n" +
+            "- 章・節タイトルの訳語は目次として並んだときの一貫性を意識する";
+  parts.push("## 原文種別ごとの規律\n" + typeRules);
+
+  parts.push(
+    "\n【守るべきこと】\n" +
+      "- 対訳表の訳語・表記を最優先で守る\n" +
+      "- 原文の情報を欠落・追加しない\n" +
+      "- 直前セグメントの訳文（previousTail）と文体・用語・呼称を揃える",
   );
   return parts.join("\n\n");
 }

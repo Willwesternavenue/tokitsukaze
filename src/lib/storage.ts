@@ -103,6 +103,9 @@ function mergeDefaults(p: Project): Project {
     glossary: Array.isArray((p as any).glossary) ? (p as any).glossary : [],
     screenplayMeta: (p as any).screenplayMeta ?? undefined,
     blogMeta: (p as any).blogMeta ?? undefined,
+    newsMeta: (p as any).newsMeta ?? undefined,
+    translationMeta: (p as any).translationMeta ?? undefined,
+    termPairs: Array.isArray((p as any).termPairs) ? (p as any).termPairs : [],
     referenceWorkIds: Array.isArray((p as any).referenceWorkIds)
       ? (p as any).referenceWorkIds
       : [],
@@ -458,6 +461,46 @@ export function updateScreenplayMeta(meta: import("./types").ScreenplayMeta): Pr
 
 export function updateBlogMeta(meta: import("./types").BlogMeta): Project {
   return updateProject((p) => ({ ...p, blogMeta: meta }));
+}
+
+// ===== ニュース記事 =====
+
+export function updateNewsMeta(meta: import("./types").NewsMeta): Project {
+  return updateProject((p) => ({ ...p, newsMeta: meta }));
+}
+
+// ===== 翻訳書 =====
+
+export function updateTranslationMeta(meta: import("./types").TranslationMeta): Project {
+  return updateProject((p) => ({ ...p, translationMeta: meta }));
+}
+
+export function updateTermPairs(terms: import("./types").TermPair[]): Project {
+  return updateProject((p) => ({ ...p, termPairs: terms }));
+}
+
+/**
+ * 訳文（本文）を差し替え、旧本文を bodyHistory に退避する（最大10版）。
+ * 翻訳書モードの手動編集・一括置換で使用。
+ */
+export function replaceDraftBody(
+  chapterId: string,
+  sectionId: string,
+  newBody: string,
+  note: string,
+): Project {
+  return updateProject((p) => ({
+    ...p,
+    generatedSections: p.generatedSections.map((d) => {
+      if (d.chapterId !== chapterId || d.sectionId !== sectionId) return d;
+      if (d.body === newBody) return d;
+      const history = [
+        ...(d.bodyHistory ?? []),
+        { savedAt: d.updatedAt, body: d.body, note },
+      ].slice(-10);
+      return { ...d, body: newBody, bodyHistory: history, updatedAt: new Date().toISOString() };
+    }),
+  }));
 }
 
 // ===== 参照ライブラリ（グローバル。プロジェクト横断）=====

@@ -1,10 +1,10 @@
 # アキカゼ出版AI — 引き継ぎドキュメント
 
-最終更新: 2026-07-04 / 最新コミット: `10f29f7`
+最終更新: 2026-07-06
 
 ## これは何か
 
-自費出版会社向けの **AI編集システム**（当初「聞き書き出版AI」→ 5ジャンル対応に育ち「アキカゼ出版AI」に改名）。
+自費出版会社向けの **AI編集システム**（当初「聞き書き出版AI」→ 7ジャンル対応に育ち「アキカゼ出版AI」に改名）。
 取材メモ／プロット等の素材から、構成案 → 小見出し → 本文を生成し、複数の AI エージェントが
 校正・整合性・読者体験などをレビューする。デモ／商談用。
 
@@ -73,7 +73,7 @@ agentToggles / sectionAgentReports`。
 - `src/lib/ai.ts` の `generateJsonWithRetry` が parse 失敗時に最大2回リトライ（temperature 0.2）
 - `src/lib/json.ts` の `safeJsonParse` がコードフェンス除去・JSON断片抽出
 
-## 5ジャンルと専任エージェント
+## 7ジャンルと専任エージェント
 
 | ジャンル | 素材ラベル | 専任ナレッジ | 専任レビュアー |
 |---|---|---|---|
@@ -82,9 +82,27 @@ agentToggles / sectionAgentReports`。
 | business（ビジネス書） | 取材・リサーチ素材 | 参考文献・用語集 | 校閲/論理構成/出典 |
 | screenplay（脚本） | ログライン・素材 | 登場人物/相関図/設定 | キャラ/緊張感/フォーマット/尺 |
 | blog（ブログ記事） | ネタ・キーワード | キーワード・ペルソナ | 校閲/SEO |
+| news（ニュース記事） | 取材素材・一次情報 | 取材源・出典(/references流用) | 校閲/見出し・リード整合/中立性・両論 |
+| translation（翻訳書） | 原文(docx/pdf/貼付) | 対訳表・用語(/terms) | 訳抜け/用語統一/表記揺れ |
 
-共通レビュアー: 校正 / 文体守護 / 整合性 / 読者体験。
+共通レビュアー: 校正 / 文体守護 / 整合性 / 読者体験（翻訳書では整合性・読者体験はスキップ）。
 参照ライブラリ選択時（全ジャンル）: 重複チェック / 一貫性チェック（過去作）。
+
+### 翻訳書モードの特記事項（論文モードへの布石）
+
+- 構成はAIで作らない: 原文取り込み（`/api/extract-source`）→ クライアント側で章分割
+  （`src/lib/sourceSplit.ts`、見出し正規表現＋段落境界の決定論的分割）→ OutlineProposal を直接組み立て。
+  各セグメントの原文は `Section.sourceText` に保持
+- 翻訳は既存 draftWorkflow に乗る（`prompt-draft-translation` + `buildTranslationContext`。
+  対訳表 `Project.termPairs`・文体方針・原文種別 workType=book/paper/fiction/article で規律切替）。
+  **workType="paper" が将来の論文モードの翻訳の入口**
+- `/writer` の POST 時は `slimProjectForDraft` で他セグメントの sourceText と bodyHistory を落とす
+  （4.5MB body制限とプロンプト肥大の対策）
+- `/terms` = ローカライズ作業台（対訳表CRUD・AI用語抽出 `/api/extract-terms`・用語検索・
+  一括置換・表記揺れスキャン）。置換・編集・再翻訳は旧訳文を `SectionDraft.bodyHistory` に退避（最大10版）し、
+  `/writer` の「変更差分」タブで自前LCS Diff（`src/lib/diff.ts`）でGitHub風に比較できる
+- 対訳Word出力: `exportBilingualDocx`（原文/訳文の2列テーブル）
+- 言語は現状 日⇄英（`LangCode`）。追加時は types.ts の `LangCode` と genreConfig の `LANGUAGE_OPTIONS` に足す
 
 ## 画面一覧
 
@@ -95,10 +113,13 @@ agentToggles / sectionAgentReports`。
 - `/review` 診断集約ビュー
 - `/staff` AIスタッフ（旧プロンプト管理。`/prompts` はここへ redirect）
 - `/settings` プロジェクト設定 + JSON入出力 + ロードマップ
-- ナレッジ: `/memory` `/characters` `/relations` `/bible` `/references` `/seo` `/library`
+- ナレッジ: `/memory` `/characters` `/relations` `/bible` `/references` `/seo` `/terms` `/library`
 
-## 最近の実装（このセッション、新しい順）
+## 最近の実装（新しい順）
 
+0. **ニュース記事モード + 翻訳書モード**（2026-07-06）: news（見出し・リード整合/中立性エージェント、
+   newsMeta）と translation（原文取り込み→章分割→翻訳→対訳/Diff/用語/一括置換。上の特記事項参照）。
+   設計書: `docs/superpowers/specs/2026-07-06-news-and-translation-modes-design.md`
 1. **小見出しの個別編集**（`10f29f7`）: /writer で小見出しを手動編集/AI修正/追加/削除 → 本文生成
 2. **構成の調整画面**（`935bb72`）: /outline/refine 追加。全体AI改善 + 章ごと修正 + 手動編集
 3. **アキカゼ出版AI 改名 + 参照ライブラリ**（`d2b4753`）: 過去作品を作品カルテ化して踏襲/重複/矛盾チェック
@@ -115,7 +136,7 @@ agentToggles / sectionAgentReports`。
 ## 次にやる候補（ロードマップ）
 
 - **実用書モード**（検討中。手順検証エージェント）
-- **論文モード**（検討中。IMRaD + 日英翻訳 + 簡易査読）
+- **論文モード**（検討中。IMRaD + 簡易査読。翻訳は翻訳書モードのエンジンを流用: workType="paper" + 対訳表 + 訳抜け/用語統一チェック）
 - **全文RAG**（Phase B。Vercel Blob + Neon pgvector。過去作の逐語セリフ矛盾検出など）
 - P6 通しレビュー（`/review` の「全体レビューを実行」は現状 disabled）
 - Neon への参照ライブラリ mirror（別端末同期が要るとき。今は JSON エクスポートで移行）

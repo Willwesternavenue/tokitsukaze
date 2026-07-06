@@ -304,6 +304,103 @@ const SEO_CHECK: AgentDef = {
   }),
 };
 
+// ===== ニュース用: 見出し・リード整合チェック / 中立性・両論チェック =====
+
+import { newsTypeLabel } from "@/lib/genreConfig";
+
+function serializeNewsMeta(ctx: AgentContext): string {
+  const m = ctx.project.newsMeta;
+  if (!m) return "（記事仕様なし）";
+  return [
+    `想定媒体: ${m.outlet || "未設定"}`,
+    `記事種別: ${newsTypeLabel(m.newsType)}`,
+    `切り口・アングル: ${m.angle || "未設定"}`,
+    `想定読者: ${m.audience || "未設定"}`,
+    m.headlineDraft ? `見出し案（現在）: ${m.headlineDraft}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+const HEADLINE_LEAD_CHECK: AgentDef = {
+  key: "headline-lead-check",
+  label: "見出し・リード",
+  promptId: "prompt-agent-headline-lead",
+  buildVars: (ctx) => ({
+    body: ctx.draft.body,
+    chapterTitle: ctx.chapter?.title ?? ctx.draft.chapterTitle,
+    sectionTitle: ctx.section?.title ?? ctx.draft.sectionTitle,
+    newsContext: serializeNewsMeta(ctx),
+  }),
+};
+
+const NEUTRALITY_CHECK: AgentDef = {
+  key: "neutrality-check",
+  label: "中立性",
+  promptId: "prompt-agent-neutrality",
+  buildVars: (ctx) => ({
+    body: ctx.draft.body,
+    newsContext: serializeNewsMeta(ctx),
+  }),
+};
+
+// ===== 翻訳書用: 訳抜け / 用語統一 / 表記揺れ =====
+// （論文モードの日英翻訳でも流用予定。sourceText は Section.sourceText から取る）
+
+function serializeTermPairs(ctx: AgentContext): string {
+  const terms = ctx.project.termPairs ?? [];
+  if (terms.length === 0) return "（対訳表が未登録です）";
+  // confirmed を優先し、プロンプト肥大を避けるため上限を設ける
+  const sorted = [...terms].sort((a, b) =>
+    a.status === b.status ? 0 : a.status === "confirmed" ? -1 : 1,
+  );
+  return sorted
+    .slice(0, 120)
+    .map(
+      (t) =>
+        `- ${t.source} → ${t.target}${t.variants?.length ? `（NG表記: ${t.variants.join("、")}）` : ""}${
+          t.notes ? ` — ${t.notes}` : ""
+        }${t.status === "candidate" ? "（候補）" : ""}`,
+    )
+    .join("\n");
+}
+
+const OMISSION_CHECK: AgentDef = {
+  key: "omission-check",
+  label: "訳抜け",
+  promptId: "prompt-agent-omission",
+  buildVars: (ctx) => ({
+    sourceText: ctx.section?.sourceText ?? "（原文なし）",
+    body: ctx.draft.body,
+  }),
+};
+
+const TERMINOLOGY_CHECK: AgentDef = {
+  key: "terminology-check",
+  label: "用語統一",
+  promptId: "prompt-agent-terminology",
+  buildVars: (ctx) => ({
+    termPairs: serializeTermPairs(ctx),
+    sourceText: ctx.section?.sourceText ?? "（原文なし）",
+    body: ctx.draft.body,
+  }),
+};
+
+const ORTHOGRAPHY_CHECK: AgentDef = {
+  key: "orthography-check",
+  label: "表記揺れ",
+  promptId: "prompt-agent-orthography",
+  buildVars: (ctx) => ({
+    previousBodies:
+      ctx.project.generatedSections
+        .filter((d) => !(d.chapterId === ctx.draft.chapterId && d.sectionId === ctx.draft.sectionId))
+        .slice(-4)
+        .map((d) => d.body.slice(0, 800))
+        .join("\n---\n") || "（まだ他の訳文なし）",
+    body: ctx.draft.body,
+  }),
+};
+
 // ===== 脚本用: フォーマットチェック / 尺・テンポチェック =====
 
 import { mediaTypeLabel } from "@/lib/genreConfig";
@@ -506,6 +603,50 @@ export async function seoCheckStep(
 ): Promise<AgentReportSummary> {
   "use step";
   return runReviewer(SEO_CHECK, ctx, runId);
+}
+
+// ===== ニュース専用 =====
+
+export async function headlineLeadCheckStep(
+  ctx: AgentContext,
+  runId: string,
+): Promise<AgentReportSummary> {
+  "use step";
+  return runReviewer(HEADLINE_LEAD_CHECK, ctx, runId);
+}
+
+export async function neutralityCheckStep(
+  ctx: AgentContext,
+  runId: string,
+): Promise<AgentReportSummary> {
+  "use step";
+  return runReviewer(NEUTRALITY_CHECK, ctx, runId);
+}
+
+// ===== 翻訳書専用（論文モードでも流用予定） =====
+
+export async function omissionCheckStep(
+  ctx: AgentContext,
+  runId: string,
+): Promise<AgentReportSummary> {
+  "use step";
+  return runReviewer(OMISSION_CHECK, ctx, runId);
+}
+
+export async function terminologyCheckStep(
+  ctx: AgentContext,
+  runId: string,
+): Promise<AgentReportSummary> {
+  "use step";
+  return runReviewer(TERMINOLOGY_CHECK, ctx, runId);
+}
+
+export async function orthographyCheckStep(
+  ctx: AgentContext,
+  runId: string,
+): Promise<AgentReportSummary> {
+  "use step";
+  return runReviewer(ORTHOGRAPHY_CHECK, ctx, runId);
 }
 
 // ===== 参照ライブラリ（全ジャンル・参照作品選択時のみ）=====

@@ -4,6 +4,8 @@ export type Section = {
   summary?: string;
   /** 脚本モード: シーンの slugline・尺・目的 (他ジャンルでは undefined) */
   sceneMeta?: SceneMeta;
+  /** 翻訳書モード: このセグメントの原文 (他ジャンルでは undefined) */
+  sourceText?: string;
 };
 
 export type Chapter = {
@@ -40,6 +42,15 @@ export type SectionDraft = {
   updatedAt: string;
   /** 波及再生成から保護するフラグ（本文を手で直した節） */
   locked?: boolean;
+  /** 翻訳書モード: 過去の訳文（再生成・手動編集の前に退避。Diff比較の材料。最大10版） */
+  bodyHistory?: BodyVersion[];
+};
+
+/** 訳文（本文）の過去バージョン。GitHub風Diffの比較元になる */
+export type BodyVersion = {
+  savedAt: string;
+  body: string;
+  note?: string; // "再生成前" | "手動編集前" | "一括置換前" 等
 };
 
 // 影響検出（波及反映）: 上流の編集で影響を受ける下流の節
@@ -116,6 +127,12 @@ export type Project = {
   screenplayMeta?: ScreenplayMeta;
   // ===== ブログ記事 =====
   blogMeta?: BlogMeta;
+  // ===== ニュース記事 =====
+  newsMeta?: NewsMeta;
+  // ===== 翻訳書 =====
+  translationMeta?: TranslationMeta;
+  /** 翻訳書: 対訳表（用語の確定訳語と揺れ表記）。論文モードでも流用予定 */
+  termPairs?: TermPair[];
   // ===== 参照ライブラリ（このプロジェクトが参照する作品のID。ライブラリ本体はグローバル）=====
   referenceWorkIds?: string[];
   // ===== Nav 再構成: AIスタッフのトグルと診断結果の永続化 =====
@@ -154,6 +171,13 @@ export type AgentKey =
   | "runtime-check"
   // ブログ記事専用
   | "seo-check"
+  // ニュース記事専用
+  | "headline-lead-check"
+  | "neutrality-check"
+  // 翻訳書専用（論文モードでも流用予定）
+  | "omission-check"
+  | "terminology-check"
+  | "orthography-check"
   // 参照ライブラリ（全ジャンル・参照作品選択時のみ）
   | "repetition-check"
   | "continuity-check";
@@ -179,7 +203,14 @@ export type AgentReportSummary = {
 
 // ===== P3: Novel-specific data model =====
 
-export type Genre = "biography" | "novel" | "business" | "screenplay" | "blog";
+export type Genre =
+  | "biography"
+  | "novel"
+  | "business"
+  | "screenplay"
+  | "blog"
+  | "news"
+  | "translation";
 
 // ===== ブログ記事モード =====
 
@@ -189,6 +220,53 @@ export type BlogMeta = {
   searchIntent: string;       // 検索意図（読者がこの検索で本当に知りたいこと）
   persona: string;            // 想定読者の像
   metaDescription: string;    // メタディスクリプション（AIが提案・編集可）
+};
+
+// ===== ニュース記事モード =====
+
+export type NewsType = "straight" | "explainer" | "feature" | "interview";
+
+export type NewsMeta = {
+  outlet: string;        // 想定媒体（新聞・Webメディア名）
+  newsType: NewsType;    // ストレート / 解説 / 特集・ルポ / インタビュー
+  angle: string;         // 切り口・アングル（この記事は何のニュースか）
+  audience: string;      // 想定読者
+  headlineDraft: string; // 見出し案（AIが提案・編集可）
+};
+
+// ===== 翻訳書モード =====
+
+/**
+ * 対応言語。当面は日英のみ。
+ * 将来 "es" | "zh" | "ko" | "fr" | "de" 等をここに足す（UI は LANGUAGE_OPTIONS が拾う）。
+ */
+export type LangCode = "ja" | "en";
+
+/** 原文の性質。プロンプトの規律が切り替わる。paper が将来の論文モードへの入口 */
+export type TranslationWorkType = "book" | "paper" | "fiction" | "article";
+
+export type TranslationMeta = {
+  sourceLang: LangCode;
+  targetLang: LangCode;
+  workType: TranslationWorkType;
+  /** 訳文の文体方針（ですます/である、直訳寄り/意訳寄り、敬称・呼称の扱い等の自由記述） */
+  stylePolicy: string;
+  sourceFilename?: string;
+  sourceCharCount?: number;
+};
+
+/**
+ * 対訳表の1行。terminology-check（用語統一）と表記揺れスキャンの参照元。
+ * - variants: 「この表記に揺れやすい」という検出対象（例: target=サーバー, variants=[サーバ]）
+ * - status: AI抽出直後は candidate。人が確認したら confirmed
+ */
+export type TermPair = {
+  id: string;
+  source: string;
+  target: string;
+  variants: string[];
+  notes?: string;
+  status: "confirmed" | "candidate";
 };
 
 // ===== 参照ライブラリ（過去作品・参照作品の「作品カルテ」）=====

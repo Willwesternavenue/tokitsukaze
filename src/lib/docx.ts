@@ -1,6 +1,17 @@
 "use client";
 
-import { Document, HeadingLevel, Packer, Paragraph, TextRun } from "docx";
+import {
+  Document,
+  HeadingLevel,
+  Packer,
+  Paragraph,
+  Table,
+  TableCell,
+  TableRow,
+  TextRun,
+  VerticalAlign,
+  WidthType,
+} from "docx";
 import { saveAs } from "file-saver";
 import type { Project, SectionDraft } from "./types";
 
@@ -112,4 +123,82 @@ export async function exportProjectDocx(project: Project): Promise<void> {
     sections: [{ properties: {}, children }],
   });
   await downloadDoc(doc, `アキカゼ出版AI_全体原稿ドラフト_${fileSafe(project.name)}.docx`);
+}
+
+// ===== 翻訳書モード: 対訳（原文・訳文の2列テーブル）Word出力 =====
+
+function cellParagraphs(text: string, muted = false): Paragraph[] {
+  const lines = (text || "").split(/\n+/).filter(Boolean);
+  if (lines.length === 0) return [new Paragraph({ children: [new TextRun("")] })];
+  return lines.map(
+    (line) =>
+      new Paragraph({
+        children: [new TextRun({ text: line, color: muted ? "666666" : undefined, size: 20 })],
+      }),
+  );
+}
+
+function bilingualRow(source: string, target: string): TableRow {
+  return new TableRow({
+    children: [
+      new TableCell({
+        width: { size: 50, type: WidthType.PERCENTAGE },
+        verticalAlign: VerticalAlign.TOP,
+        children: cellParagraphs(source, true),
+      }),
+      new TableCell({
+        width: { size: 50, type: WidthType.PERCENTAGE },
+        verticalAlign: VerticalAlign.TOP,
+        children: cellParagraphs(target),
+      }),
+    ],
+  });
+}
+
+/**
+ * 対訳Word出力: 章ごとに「原文｜訳文」の2列テーブルを並べる。
+ * 未翻訳セグメントは訳文側に（未翻訳）と出す。校正・突き合わせ確認用。
+ */
+export async function exportBilingualDocx(project: Project): Promise<void> {
+  const outline = project.selectedOutline;
+  if (!outline) throw new Error("構成（章・セグメント）がありません。先に原文を取り込んでください。");
+
+  const children: (Paragraph | Table)[] = [];
+  children.push(heading(project.name, HeadingLevel.TITLE));
+  children.push(para(`原著者：${project.intervieweeName}`));
+  children.push(para("対訳ドラフト（左：原文 / 右：訳文）"));
+  children.push(spacer());
+
+  for (const chapter of outline.chapters) {
+    children.push(heading(chapter.title, HeadingLevel.HEADING_1));
+    const rows: TableRow[] = [
+      new TableRow({
+        children: [
+          new TableCell({
+            width: { size: 50, type: WidthType.PERCENTAGE },
+            children: [para("原文", { bold: true })],
+          }),
+          new TableCell({
+            width: { size: 50, type: WidthType.PERCENTAGE },
+            children: [para("訳文", { bold: true })],
+          }),
+        ],
+      }),
+    ];
+    for (const section of chapter.sections) {
+      const draft = project.generatedSections.find(
+        (d) => d.chapterId === chapter.id && d.sectionId === section.id,
+      );
+      rows.push(bilingualRow(section.sourceText ?? "（原文なし）", draft?.body ?? "（未翻訳）"));
+    }
+    children.push(new Table({ rows, width: { size: 100, type: WidthType.PERCENTAGE } }));
+    children.push(spacer());
+  }
+
+  const doc = new Document({
+    creator: "アキカゼ出版AI",
+    title: `${project.name}（対訳）`,
+    sections: [{ properties: {}, children }],
+  });
+  await downloadDoc(doc, `対訳_${fileSafe(project.name)}.docx`);
 }

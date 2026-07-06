@@ -8,6 +8,7 @@ import {
   loadProject,
   loadPrompts,
   removeSectionFromOutline,
+  replaceDraftBody,
   replaceSelectedOutline,
   saveSectionAgentReports,
   setSectionLocked,
@@ -24,12 +25,40 @@ import type {
   Section,
   SectionDraft,
 } from "@/lib/types";
-import { exportProjectDocx, exportSectionDocx } from "@/lib/docx";
+import { exportBilingualDocx, exportProjectDocx, exportSectionDocx } from "@/lib/docx";
 import { postJson, startAndPollRun } from "@/lib/apiClient";
 import type { SectionsWorkflowResult } from "@/workflows/sections";
 import { buildScreenplayExtraContext, getGenreConfig } from "@/lib/genreConfig";
+import { diffLines, diffStats } from "@/lib/diff";
 
 type Selected = { chapter: Chapter; section: Section } | null;
+
+type TranslationView = "bilingual" | "target" | "diff";
+
+/**
+ * 翻訳書モード: API に渡す project を軽量化する。
+ * 原文（sourceText）は現在のセクション以外では不要で、書籍全体だと数百KB〜MBになり
+ * Vercel の body 制限・プロンプト肥大の原因になるため落とす。bodyHistory も同様。
+ */
+function slimProjectForDraft(project: Project, keepSectionId: string): Project {
+  if (project.genre !== "translation") return project;
+  return {
+    ...project,
+    outlineProposals: [],
+    selectedOutline: project.selectedOutline
+      ? {
+          ...project.selectedOutline,
+          chapters: project.selectedOutline.chapters.map((c) => ({
+            ...c,
+            sections: c.sections.map((s) =>
+              s.id === keepSectionId ? s : { ...s, sourceText: undefined },
+            ),
+          })),
+        }
+      : undefined,
+    generatedSections: project.generatedSections.map(({ bodyHistory: _h, ...rest }) => rest),
+  };
+}
 
 const TOD_JA: Record<string, string> = {
   DAY: "昼",
@@ -56,6 +85,11 @@ export default function WriterPage() {
   const [propagating, setPropagating] = useState(false);
   const [propagateProgress, setPropagateProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 翻訳書モード: 表示タブ / 訳文編集 / Diff比較元
+  const [trView, setTrView] = useState<TranslationView>("bilingual");
+  const [editingBody, setEditingBody] = useState(false);
+  const [bodyDraft, setBodyDraft] = useState("");
+  const [diffBaseIdx, setDiffBaseIdx] = useState<number | null>(null); // null = 最新の旧版
 
   useEffect(() => {
     const p = loadProject();
@@ -67,9 +101,16 @@ export default function WriterPage() {
     }
   }, []);
 
+  // 選択セグメントが変わったら翻訳モードの編集・Diff状態をリセット
+  useEffect(() => {
+    setEditingBody(false);
+    setDiffBaseIdx(null);
+  }, [selected?.chapter.id, selected?.section.id]);
+
   const genreCfg = getGenreConfig(project?.genre);
   const writingTitle = genreCfg.stages.writing.pageTitle;
   const isScreenplay = project?.genre === "screenplay";
+  const isTranslation = project?.genre === "translation";
   const targetMinutes = project?.screenplayMeta?.targetRuntimeMinutes ?? 0;
   const totalMinutes = useMemo(() => {
     if (!isScreenplay || !project?.selectedOutline) return 0;
@@ -144,7 +185,7 @@ export default function WriterPage() {
       const r = await postJson<{ draft?: SectionDraft; agentReports?: AgentReportSummary[] }>(
         "/api/generate-draft",
         {
-          project,
+          project: slimProjectForDraft(project, selected.section.id),
           chapter: selected.chapter,
           section: selected.section,
           promptTemplate,
@@ -154,6 +195,13 @@ export default function WriterPage() {
       if (!r.ok) throw new Error(r.error ?? "本文生成に失敗しました。");
       const draft = r.data?.draft;
       if (!draft) throw new Error("AIから本文が返りませんでした。");
+      // 翻訳書: 再生成時は旧訳文を版として退避（Diff比較の材料）
+      if (isTranslation && currentDraft?.body) {
+        draft.bodyHistory = [
+          ...(currentDraft.bodyHistory ?? []),
+          { savedAt: currentDraft.updatedAt, body: currentDraft.body, note: "再生成前" },
+        ].slice(-10);
+      }
       upsertDraft(draft);
       // 診断結果を project に永続化 (/review 画面の集約元になる)
       const reports = r.data?.agentReports ?? [];
@@ -179,7 +227,7 @@ export default function WriterPage() {
     const r = await postJson<{ draft?: SectionDraft; agentReports?: AgentReportSummary[] }>(
       "/api/generate-draft",
       {
-        project: baseProject,
+        project: slimProjectForDraft(baseProject, section.id),
         chapter,
         section,
         promptTemplate,
@@ -451,6 +499,39 @@ export default function WriterPage() {
     }
   }
 
+  // ===== 翻訳書モード: 訳文編集・対訳Word出力 =====
+
+  function handleStartEditBody() {
+    if (!currentDraft) return;
+    setBodyDraft(currentDraft.body);
+    setEditingBody(true);
+    setTrView("target");
+  }
+
+  function handleSaveBody() {
+    if (!selected || !currentDraft) return;
+    const next = replaceDraftBody(
+      selected.chapter.id,
+      selected.section.id,
+      bodyDraft,
+      "手動編集前",
+    );
+    setProject(next);
+    setEditingBody(false);
+  }
+
+  async function handleExportBilingual() {
+    if (!project) return;
+    setExporting(true);
+    try {
+      await exportBilingualDocx(project);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setExporting(false);
+    }
+  }
+
   const outline = project.selectedOutline;
 
   return (
@@ -464,9 +545,15 @@ export default function WriterPage() {
           </p>
         </div>
         <div className="actions">
+          {isTranslation ? (
+            <button className="btn" onClick={handleExportBilingual} disabled={exporting} type="button">
+              {exporting ? <span className="spinner" /> : null}
+              対訳Wordを出力
+            </button>
+          ) : null}
           <button className="btn" onClick={handleExportAll} disabled={exporting} type="button">
             {exporting ? <span className="spinner" /> : null}
-            全体Wordを出力
+            {isTranslation ? "訳文Wordを出力" : "全体Wordを出力"}
           </button>
         </div>
       </div>
@@ -476,17 +563,19 @@ export default function WriterPage() {
       <div className="writer-shell">
         <aside className="panel">
           <div className="panel-header">
-            <h2>章・小見出し</h2>
-            <button
-              className="btn sm"
-              onClick={handleRegenSections}
-              disabled={regenSections}
-              type="button"
-              title="AIに小見出しを再生成させる"
-            >
-              {regenSections ? <span className="spinner" /> : null}
-              {regenSections ? "再生成中…" : "小見出しを再生成"}
-            </button>
+            <h2>{isTranslation ? "章・セグメント" : "章・小見出し"}</h2>
+            {!isTranslation ? (
+              <button
+                className="btn sm"
+                onClick={handleRegenSections}
+                disabled={regenSections}
+                type="button"
+                title="AIに小見出しを再生成させる"
+              >
+                {regenSections ? <span className="spinner" /> : null}
+                {regenSections ? "再生成中…" : "小見出しを再生成"}
+              </button>
+            ) : null}
           </div>
           <div className="panel-body dense">
             {isScreenplay ? (
@@ -602,7 +691,7 @@ export default function WriterPage() {
                         type="button"
                       >
                         {loading ? <span className="spinner" /> : null}
-                        本文を再生成
+                        {isTranslation ? "再翻訳" : "本文を再生成"}
                       </button>
                     ) : (
                       <button
@@ -612,9 +701,16 @@ export default function WriterPage() {
                         type="button"
                       >
                         {loading ? <span className="spinner" /> : null}
-                        {loading ? "生成中…" : "この小見出しの本文を生成"}
+                        {loading
+                          ? isTranslation ? "翻訳中…" : "生成中…"
+                          : isTranslation ? "このセグメントを翻訳" : "この小見出しの本文を生成"}
                       </button>
                     )}
+                    {isTranslation && currentDraft && !editingBody ? (
+                      <button className="btn" onClick={handleStartEditBody} type="button">
+                        訳文を編集
+                      </button>
+                    ) : null}
                     <button
                       className="btn"
                       onClick={handleReview}
@@ -707,7 +803,139 @@ export default function WriterPage() {
                   </div>
                 ) : null}
                 <div className="panel-body">
-                  {!currentDraft ? (
+                  {isTranslation ? (
+                    <>
+                      <div className="view-tabs">
+                        <button
+                          className={`btn sm ${trView === "bilingual" ? "primary" : ""}`}
+                          type="button"
+                          onClick={() => setTrView("bilingual")}
+                        >
+                          対訳
+                        </button>
+                        <button
+                          className={`btn sm ${trView === "target" ? "primary" : ""}`}
+                          type="button"
+                          onClick={() => setTrView("target")}
+                        >
+                          訳文
+                        </button>
+                        <button
+                          className={`btn sm ${trView === "diff" ? "primary" : ""}`}
+                          type="button"
+                          onClick={() => setTrView("diff")}
+                          disabled={!currentDraft?.bodyHistory?.length}
+                          title={
+                            currentDraft?.bodyHistory?.length
+                              ? "旧版とのGitHub風差分を表示"
+                              : "再生成・編集・置換をすると旧版が退避され、比較できるようになります"
+                          }
+                        >
+                          変更差分{currentDraft?.bodyHistory?.length ? `（${currentDraft.bodyHistory.length}版）` : ""}
+                        </button>
+                      </div>
+                      {trView === "bilingual" ? (
+                        <div className="bilingual-grid">
+                          <div>
+                            <div className="bilingual-label">
+                              原文（{(selected.section.sourceText?.length ?? 0).toLocaleString()} 字）
+                            </div>
+                            <div className="draft-body source-body">
+                              {selected.section.sourceText || "（このセグメントに原文がありません）"}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="bilingual-label">訳文</div>
+                            {currentDraft ? (
+                              <div className="draft-body">{currentDraft.body || "（訳文が空です）"}</div>
+                            ) : (
+                              <div className="empty-state">
+                                まだ翻訳されていません。「このセグメントを翻訳」を押してください。
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ) : trView === "target" ? (
+                        editingBody ? (
+                          <>
+                            <textarea
+                              className="input mono"
+                              rows={18}
+                              value={bodyDraft}
+                              onChange={(e) => setBodyDraft(e.target.value)}
+                            />
+                            <div className="flex" style={{ marginTop: 8, gap: 8 }}>
+                              <button className="btn primary" type="button" onClick={handleSaveBody}>
+                                保存（旧版を退避）
+                              </button>
+                              <button className="btn" type="button" onClick={() => setEditingBody(false)}>
+                                キャンセル
+                              </button>
+                            </div>
+                          </>
+                        ) : currentDraft ? (
+                          <div className="draft-body">{currentDraft.body || "（訳文が空です）"}</div>
+                        ) : (
+                          <div className="empty-state">
+                            まだ翻訳されていません。「このセグメントを翻訳」を押してください。
+                          </div>
+                        )
+                      ) : currentDraft?.bodyHistory?.length ? (
+                        (() => {
+                          const history = currentDraft.bodyHistory!;
+                          const baseIdx = Math.min(diffBaseIdx ?? history.length - 1, history.length - 1);
+                          const base = history[baseIdx];
+                          const lines = diffLines(base.body, currentDraft.body);
+                          const stats = diffStats(lines);
+                          return (
+                            <>
+                              <div className="flex" style={{ alignItems: "center", gap: 10, marginBottom: 8 }}>
+                                <label className="hint" style={{ whiteSpace: "nowrap" }}>比較元の版</label>
+                                <select
+                                  className="input"
+                                  style={{ width: "auto" }}
+                                  value={baseIdx}
+                                  onChange={(e) => setDiffBaseIdx(Number(e.target.value))}
+                                >
+                                  {history.map((h, i) => (
+                                    <option key={i} value={i}>
+                                      {new Date(h.savedAt).toLocaleString("ja-JP")}（{h.note ?? "旧版"}）
+                                    </option>
+                                  ))}
+                                </select>
+                                <span className="badge success">+{stats.added} 行</span>
+                                <span className="badge danger">−{stats.removed} 行</span>
+                              </div>
+                              <div className="diff-view">
+                                {lines.map((l, i) => (
+                                  <div key={i} className={`diff-line ${l.type}`}>
+                                    <span className="diff-sign">
+                                      {l.type === "add" ? "+" : l.type === "del" ? "-" : " "}
+                                    </span>
+                                    <span className="diff-text">
+                                      {"spans" in l && l.spans
+                                        ? l.spans.map((s, si) =>
+                                            s.type === "same" ? (
+                                              s.text
+                                            ) : (
+                                              <mark key={si} className={`diff-char-${s.type}`}>{s.text}</mark>
+                                            ),
+                                          )
+                                        : l.text}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </>
+                          );
+                        })()
+                      ) : (
+                        <div className="empty-state">
+                          まだ比較できる旧版がありません。再翻訳・訳文の編集・一括置換をすると旧版が自動で退避されます。
+                        </div>
+                      )}
+                    </>
+                  ) : !currentDraft ? (
                     <div className="empty-state">
                       まだ本文が生成されていません。「この小見出しの本文を生成」を押してください。
                     </div>

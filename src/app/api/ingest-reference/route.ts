@@ -2,30 +2,9 @@ import { NextResponse } from "next/server";
 import { start } from "workflow/api";
 import { AIConfigError } from "@/lib/ai";
 import { analyzeReferenceWorkflow } from "@/workflows/reference";
+import { extractTextFromFile } from "@/lib/extractFile";
 
 export const runtime = "nodejs";
-
-// アップロードファイルからプレーンテキストを抽出する
-async function extractText(file: File): Promise<string> {
-  const name = (file.name || "").toLowerCase();
-  const buf = Buffer.from(await file.arrayBuffer());
-
-  if (name.endsWith(".docx")) {
-    const mammoth = await import("mammoth");
-    const res = await mammoth.extractRawText({ buffer: buf });
-    return res.value ?? "";
-  }
-  if (name.endsWith(".pdf")) {
-    const { extractText: pdfExtract, getDocumentProxy } = await import("unpdf");
-    const pdf = await getDocumentProxy(new Uint8Array(buf));
-    const { text } = await pdfExtract(pdf, { mergePages: true });
-    return Array.isArray(text) ? text.join("\n") : text ?? "";
-  }
-  if (name.endsWith(".txt") || name.endsWith(".md")) {
-    return buf.toString("utf-8");
-  }
-  throw new Error("対応形式は .docx / .pdf / .txt / .md です。");
-}
 
 export async function POST(req: Request) {
   let form: FormData;
@@ -46,7 +25,7 @@ export async function POST(req: Request) {
 
   let text: string;
   try {
-    text = await extractText(file);
+    text = await extractTextFromFile(file);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return NextResponse.json({ error: `テキスト抽出に失敗しました：${msg}` }, { status: 400 });

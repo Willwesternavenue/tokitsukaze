@@ -1472,3 +1472,114 @@ hr.sep {
   color: var(--text-soft);
   line-height: 1.7;
 }
+
+/* ===== 翻訳書モード: 対訳・差分・対訳表 ===== */
+
+.view-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.bilingual-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 960px) {
+  .bilingual-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.bilingual-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.source-body {
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  color: var(--text-soft);
+}
+
+.diff-view {
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.7;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow-x: auto;
+  background: var(--panel);
+}
+.diff-line {
+  display: flex;
+  gap: 8px;
+  padding: 1px 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.diff-line .diff-sign {
+  flex: 0 0 10px;
+  color: var(--text-muted);
+  user-select: none;
+}
+.diff-line .diff-text {
+  flex: 1;
+}
+.diff-line.del {
+  background: #fdecea;
+}
+.diff-line.del .diff-sign {
+  color: var(--danger);
+}
+.diff-line.add {
+  background: var(--success-soft);
+}
+.diff-line.add .diff-sign {
+  color: var(--success);
+}
+mark.diff-char-del {
+  background: #f6b6b0;
+  color: inherit;
+  border-radius: 2px;
+}
+mark.diff-char-add {
+  background: #a9dfc0;
+  color: inherit;
+  border-radius: 2px;
+}
+
+.term-table {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.term-row {
+  display: grid;
+  grid-template-columns: 1.2fr 1.2fr 1fr 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+}
+.term-row.term-head {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 0 2px;
+}
+.term-row.candidate .input {
+  background: var(--warn-soft);
+}
+@media (max-width: 960px) {
+  .term-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .term-row.term-head {
+    display: none;
+  }
+}

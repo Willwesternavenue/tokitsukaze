@@ -108,6 +108,33 @@ export const staffRegistry: StaffMeta[] = [
     genres: ["blog"],
   },
   {
+    promptId: "prompt-outline-news",
+    staffLabel: "構成案プランナー（ニュース）",
+    group: "planning",
+    kind: "staff",
+    description: "逆ピラミッド／解説Q&A／ルポ・特集の3方向で記事構成を提案します。5W1Hの充足を確認します。",
+    runsWhen: "「章立て案を生成する」実行時（ニュース記事モード）",
+    genres: ["news"],
+  },
+  {
+    promptId: "prompt-sections-news",
+    staffLabel: "見出し構成担当（ニュース）",
+    group: "planning",
+    kind: "staff",
+    description: "各ブロックに小見出しを展開します。重要な事実から順に配置します。",
+    runsWhen: "構成案の選択時・見出し再生成時（ニュース記事モード）",
+    genres: ["news"],
+  },
+  {
+    promptId: "prompt-terms-extract",
+    staffLabel: "用語アナリスト（翻訳）",
+    group: "planning",
+    kind: "staff",
+    description: "翻訳済みセグメントの原文・訳文ペアから対訳表の候補（用語・固有名詞・訳語）を抽出します。",
+    runsWhen: "対訳表画面の「AIで用語を抽出」実行時（翻訳書モード）",
+    genres: ["translation"],
+  },
+  {
     promptId: "prompt-interview-questions",
     staffLabel: "事前ヒアリング担当",
     group: "planning",
@@ -184,6 +211,26 @@ export const staffRegistry: StaffMeta[] = [
     genres: ["blog"],
   },
 
+  {
+    promptId: "prompt-draft-news",
+    staffLabel: "記者（ニュース）",
+    group: "writing",
+    kind: "staff",
+    description: "リード先行・5W1H・事実と論評の分離・出典明示の規律で記事本文を執筆します。",
+    runsWhen: "「本文を生成」実行時（ニュース記事モード）",
+    genres: ["news"],
+  },
+  {
+    promptId: "prompt-draft-translation",
+    staffLabel: "翻訳者",
+    group: "writing",
+    kind: "staff",
+    description:
+      "原文セグメントを対訳表・文体方針に従って翻訳します。原文種別（書籍/論文/創作/記事）で規律が切り替わります。",
+    runsWhen: "「このセグメントを翻訳」実行時（翻訳書モード）",
+    genres: ["translation"],
+  },
+
   // ===== レビュースタッフ =====
   {
     promptId: "prompt-review",
@@ -241,9 +288,64 @@ export const staffRegistry: StaffMeta[] = [
     kind: "staff",
     description:
       "本文中の事実主張を素材・一般知識と照合し、誤り・時代考証の違和感・要出典を検出します。実話ベースの原稿に必須。",
-    runsWhen: "本文生成後に自動実行（聞き書き・ビジネス書・ブログ。創作の小説では実行されない）",
-    genres: ["biography", "business", "blog"],
+    runsWhen: "本文生成後に自動実行（聞き書き・ビジネス書・ブログ・ニュース。創作の小説では実行されない）",
+    genres: ["biography", "business", "blog", "news"],
     agentKey: "fact-check",
+  },
+  {
+    promptId: "prompt-agent-headline-lead",
+    staffLabel: "見出し・リード整合チェック",
+    group: "review",
+    kind: "staff",
+    description:
+      "見出しと本文の乖離（見出し詐欺）、リードの5W1H欠落、重要情報の後置を検出し、見出し案を提示します。",
+    runsWhen: "本文生成後に自動実行（ニュース記事モードのみ）",
+    genres: ["news"],
+    agentKey: "headline-lead-check",
+  },
+  {
+    promptId: "prompt-agent-neutrality",
+    staffLabel: "中立性・両論チェック",
+    group: "review",
+    kind: "staff",
+    description:
+      "出典なき評価・断定、ロード語（印象操作的な形容）、一方の言い分のみの記述、事実と論評の混在を検出します。",
+    runsWhen: "本文生成後に自動実行（ニュース記事モードのみ）",
+    genres: ["news"],
+    agentKey: "neutrality-check",
+  },
+  {
+    promptId: "prompt-agent-omission",
+    staffLabel: "訳抜け・過剰訳チェック",
+    group: "review",
+    kind: "staff",
+    description:
+      "原文と訳文を突き合わせ、訳抜け（文・句・修飾・否定の欠落）、原文にない加筆、数値・固有名詞の転記ミスを検出します。",
+    runsWhen: "翻訳生成後に自動実行（翻訳書モード。論文モードでも流用予定）",
+    genres: ["translation"],
+    agentKey: "omission-check",
+  },
+  {
+    promptId: "prompt-agent-terminology",
+    staffLabel: "用語統一チェック",
+    group: "review",
+    kind: "staff",
+    description:
+      "対訳表と突き合わせ、確定訳語と異なる訳・同一原語の訳し分け（意図しないもの）を検出します。",
+    runsWhen: "翻訳生成後に自動実行（翻訳書モード。論文モードでも流用予定）",
+    genres: ["translation"],
+    agentKey: "terminology-check",
+  },
+  {
+    promptId: "prompt-agent-orthography",
+    staffLabel: "表記揺れチェック",
+    group: "review",
+    kind: "staff",
+    description:
+      "カタカナ長音（サーバ/サーバー）、漢字/かなの揺れ（下さい/ください）、数字・単位表記の揺れを検出します。",
+    runsWhen: "翻訳生成後に自動実行（翻訳書モード）",
+    genres: ["translation"],
+    agentKey: "orthography-check",
   },
   {
     promptId: "prompt-agent-logic",
@@ -363,7 +465,11 @@ export const plannedRiskStaff: { label: string; genres: string }[] = [
 /** 検討中・開発予定のモード。設定画面などのロードマップ表示用 */
 export const plannedGenres: { label: string; status: "next" | "candidate"; note: string }[] = [
   { label: "実用書", status: "candidate", note: "ハウツー・手順解説。手順の検証エージェントを検討" },
-  { label: "論文", status: "candidate", note: "IMRaD構成・日英翻訳・簡易査読" },
+  {
+    label: "論文",
+    status: "candidate",
+    note: "IMRaD構成・簡易査読。日英翻訳は翻訳書モードのエンジン（翻訳者・訳抜け/用語統一チェック・対訳表）を流用予定",
+  },
 ];
 
 export function staffForGenre(genre: Genre): StaffMeta[] {

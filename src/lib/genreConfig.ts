@@ -285,12 +285,109 @@ export const blogConfig: GenreConfig = {
   },
 };
 
+export const newsConfig: GenreConfig = {
+  genre: "news",
+  label: "ニュース記事",
+  stages: {
+    material: {
+      navLabel: "素材",
+      pageTitle: "取材素材・一次情報",
+      description: "取材メモ・発表資料・一次情報を整理し、記事構成案を生成します。",
+    },
+    structure: {
+      navLabel: "構成",
+      pageTitle: "記事構成",
+      description: "逆ピラミッド／解説Q&A／ルポ・特集の3案から方向性を選びます。",
+    },
+    writing: {
+      navLabel: "執筆",
+      pageTitle: "記事執筆",
+      description: "ブロック単位で、リード先行・事実と論評を分離した本文を生成します。",
+    },
+    review: {
+      navLabel: "レビュー",
+      pageTitle: "報道品質レビュー",
+      description: "見出し・リードの整合、中立性、事実確認を集約して確認します。",
+    },
+  },
+  knowledge: [
+    { href: "/references", label: "取材源・出典" },
+    { href: "/memory", label: "執筆メモリ" },
+    { href: "/library", label: "参照ライブラリ" },
+  ],
+  material: {
+    panelTitle: "取材素材・一次情報",
+    placeholder:
+      "取材メモ、発表資料・プレスリリースの要点、当事者コメント、数値・日時・場所などの一次情報を貼り付けてください。",
+    help: "5W1Hが分かる素材ほど精度が上がります。出典・取材源はナレッジ（取材源・出典）に登録すると、本文と出典チェックに反映されます。",
+    subjectLabel: "記者名／媒体名",
+  },
+  pipelinePrompts: {
+    outline: "prompt-outline-news",
+    sections: "prompt-sections-news",
+    draft: "prompt-draft-news",
+  },
+  outlineTypeLabels: {
+    chronological: "逆ピラミッド型（ストレート）",
+    thematic: "解説・Q&A型",
+    narrative: "ルポ・特集型",
+  },
+};
+
+export const translationConfig: GenreConfig = {
+  genre: "translation",
+  label: "翻訳書",
+  stages: {
+    material: {
+      navLabel: "原文",
+      pageTitle: "原文取り込み",
+      description: "Word / PDF / テキストを取り込み、章とセグメントに分割します。",
+    },
+    structure: {
+      navLabel: "構成",
+      pageTitle: "章・セグメント構成",
+      description: "原文の章立てを確認します（分割は原文取り込み画面で行います）。",
+    },
+    writing: {
+      navLabel: "翻訳",
+      pageTitle: "翻訳",
+      description: "セグメント単位で翻訳し、対訳・差分ビューで確認します。",
+    },
+    review: {
+      navLabel: "レビュー",
+      pageTitle: "翻訳レビュー",
+      description: "訳抜け・用語統一・表記揺れの診断を集約して確認します。",
+    },
+  },
+  knowledge: [
+    { href: "/terms", label: "対訳表・用語" },
+    { href: "/memory", label: "執筆メモリ" },
+    { href: "/library", label: "参照ライブラリ" },
+  ],
+  material: {
+    panelTitle: "原文テキスト",
+    placeholder:
+      "原文（英語または日本語）を貼り付けるか、上のファイル取り込みで Word / PDF を読み込んでください。",
+    help: "取り込んだ原文は「章に分割」で章・セグメントに分けてから翻訳します。原文ファイル自体は保存されず、テキストのみプロジェクトに保持されます。",
+    subjectLabel: "原著者名",
+  },
+  // 翻訳書は構成をAIで生成しない（原文構造から決定論的に組み立てる）。
+  // outline / sections の id は未使用だが型上必要なので汎用を指す。
+  pipelinePrompts: {
+    outline: "prompt-outline",
+    sections: "prompt-sections",
+    draft: "prompt-draft-translation",
+  },
+};
+
 const registry: Record<Genre, GenreConfig> = {
   biography: biographyConfig,
   novel: novelConfig,
   business: businessConfig,
   screenplay: screenplayConfig,
   blog: blogConfig,
+  news: newsConfig,
+  translation: translationConfig,
 };
 
 // ===== 脚本: メディア種別のプリセット =====
@@ -310,6 +407,48 @@ export function mediaTypeLabel(v: string | undefined): string {
   return MEDIA_TYPE_OPTIONS.find((o) => o.value === v)?.label ?? "映画（長編）";
 }
 
+// ===== ニュース: 記事種別のプリセット =====
+
+export const NEWS_TYPE_OPTIONS: {
+  value: import("./types").NewsType;
+  label: string;
+}[] = [
+  { value: "straight", label: "ストレートニュース" },
+  { value: "explainer", label: "解説記事" },
+  { value: "feature", label: "特集・ルポ" },
+  { value: "interview", label: "インタビュー" },
+];
+
+export function newsTypeLabel(v: string | undefined): string {
+  return NEWS_TYPE_OPTIONS.find((o) => o.value === v)?.label ?? "ストレートニュース";
+}
+
+// ===== 翻訳書: 言語・原文種別のプリセット =====
+
+/** 対応言語。将来 es / zh / ko / fr / de を追加するときはここに足すだけでUIに反映される */
+export const LANGUAGE_OPTIONS: { value: import("./types").LangCode; label: string }[] = [
+  { value: "en", label: "英語" },
+  { value: "ja", label: "日本語" },
+];
+
+export function langLabel(v: string | undefined): string {
+  return LANGUAGE_OPTIONS.find((o) => o.value === v)?.label ?? v ?? "英語";
+}
+
+export const WORK_TYPE_OPTIONS: {
+  value: import("./types").TranslationWorkType;
+  label: string;
+}[] = [
+  { value: "book", label: "書籍（実用・ノンフィクション）" },
+  { value: "paper", label: "論文・学術" },
+  { value: "fiction", label: "創作・フィクション" },
+  { value: "article", label: "記事・ドキュメント" },
+];
+
+export function workTypeLabel(v: string | undefined): string {
+  return WORK_TYPE_OPTIONS.find((o) => o.value === v)?.label ?? "書籍（実用・ノンフィクション）";
+}
+
 /**
  * ジャンル固有の extraContext (outline / sections 生成の user prompt に付与)。
  * 脚本: メディア種別・目標尺 / ブログ: キーワード・検索意図・ペルソナ。
@@ -325,6 +464,12 @@ export function buildScreenplayExtraContext(p: {
     searchIntent?: string;
     persona?: string;
   };
+  newsMeta?: {
+    outlet?: string;
+    newsType?: string;
+    angle?: string;
+    audience?: string;
+  };
 }): string {
   if (p.genre === "screenplay" && p.screenplayMeta) {
     return `【作品仕様】\nメディア種別: ${mediaTypeLabel(p.screenplayMeta.mediaType)}\n目標尺: ${p.screenplayMeta.targetRuntimeMinutes}分`;
@@ -337,6 +482,16 @@ export function buildScreenplayExtraContext(p: {
       (m.secondaryKeywords?.length ? `関連キーワード: ${m.secondaryKeywords.join("、")}\n` : "") +
       `検索意図: ${m.searchIntent || "（未設定）"}\n` +
       `想定読者（ペルソナ）: ${m.persona || "（未設定）"}`
+    );
+  }
+  if (p.genre === "news" && p.newsMeta) {
+    const m = p.newsMeta;
+    return (
+      "【記事仕様】\n" +
+      `想定媒体: ${m.outlet || "（未設定）"}\n` +
+      `記事種別: ${newsTypeLabel(m.newsType)}\n` +
+      `切り口・アングル: ${m.angle || "（未設定）"}\n` +
+      `想定読者: ${m.audience || "（未設定）"}`
     );
   }
   return "";

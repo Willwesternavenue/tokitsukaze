@@ -7,15 +7,41 @@ import {
   loadProject,
   saveProject,
   resetProject,
+  updateProject,
 } from "@/lib/storage";
-import { getGenreConfig, allGenres, MEDIA_TYPE_OPTIONS } from "@/lib/genreConfig";
-import type { Project, ScreenplayMediaType } from "@/lib/types";
+import {
+  getGenreConfig,
+  allGenres,
+  MEDIA_TYPE_OPTIONS,
+  NEWS_TYPE_OPTIONS,
+  LANGUAGE_OPTIONS,
+  WORK_TYPE_OPTIONS,
+} from "@/lib/genreConfig";
+import type {
+  LangCode,
+  NewsType,
+  Project,
+  ScreenplayMediaType,
+  TranslationWorkType,
+} from "@/lib/types";
+import {
+  buildTranslationOutline,
+  splitIntoChapters,
+  stripSourceText,
+  type SourceChapter,
+} from "@/lib/sourceSplit";
 
 export default function InterviewNotesPage() {
   const router = useRouter();
   const [project, setProject] = useState<Project | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  // 翻訳書モード: 原文取り込み（原文はローカル state のみ。分割確定時に構成へ保存される）
+  const [sourceText, setSourceText] = useState("");
+  const [sourceFilename, setSourceFilename] = useState<string | null>(null);
+  const [extracting, setExtracting] = useState(false);
+  const [chapterPreview, setChapterPreview] = useState<SourceChapter[] | null>(null);
+  const [segmentChars, setSegmentChars] = useState(2000);
 
   useEffect(() => {
     setProject(loadProject());
@@ -65,7 +91,77 @@ export default function InterviewNotesPage() {
     setInfo("現在のプロジェクトをサンプル状態に戻しました。");
   }
 
+  // ===== 翻訳書モード: 原文取り込み〜章分割 =====
+
+  async function handleSourceFile(file: File) {
+    setError(null);
+    setInfo(null);
+    setExtracting(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/extract-source", { method: "POST", body: fd });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.text) {
+        throw new Error(data?.error ?? "テキスト抽出に失敗しました。");
+      }
+      setSourceText(data.text);
+      setSourceFilename(data.filename ?? file.name);
+      setChapterPreview(splitIntoChapters(data.text));
+      setInfo(
+        `「${file.name}」から ${Number(data.charCount ?? data.text.length).toLocaleString()} 文字を取り込みました。下の分割プレビューを確認して確定してください。`,
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setExtracting(false);
+    }
+  }
+
+  function handleSplitPreview() {
+    setError(null);
+    if (!sourceText.trim()) {
+      setError("原文テキストを貼り付けるか、ファイルを取り込んでください。");
+      return;
+    }
+    setChapterPreview(splitIntoChapters(sourceText));
+  }
+
+  function handleConfirmSplit() {
+    if (!project || !chapterPreview || chapterPreview.length === 0) return;
+    if (
+      project.generatedSections.length > 0 &&
+      !confirm(
+        "既に翻訳済みのセグメントがあります。章構成を作り直すと既存の訳文は破棄されます。続行しますか？",
+      )
+    ) {
+      return;
+    }
+    const outline = buildTranslationOutline(chapterPreview, segmentChars);
+    const totalChars = chapterPreview.reduce((a, c) => a + c.text.length, 0);
+    const next = updateProject((p) => ({
+      ...p,
+      selectedOutline: outline,
+      // /outline 画面の表示用には sourceText を落とした軽量コピーを置く（localStorage節約）
+      outlineProposals: [stripSourceText(outline)],
+      generatedSections: [],
+      sectionAgentReports: {},
+      sectionAgentReportsPrev: {},
+      translationMeta: {
+        sourceLang: p.translationMeta?.sourceLang ?? "en",
+        targetLang: p.translationMeta?.targetLang ?? "ja",
+        workType: p.translationMeta?.workType ?? "book",
+        stylePolicy: p.translationMeta?.stylePolicy ?? "",
+        sourceFilename: sourceFilename ?? undefined,
+        sourceCharCount: totalChars,
+      },
+    }));
+    setProject(next);
+    router.push("/writer");
+  }
+
   const config = getGenreConfig(project.genre);
+  const isTranslation = project.genre === "translation";
   const labels = {
     h1: config.stages.material.pageTitle,
     subtitle: config.stages.material.description,
@@ -85,13 +181,15 @@ export default function InterviewNotesPage() {
           <button className="btn ghost" onClick={handleReset} type="button">
             このプロジェクトをサンプルに戻す
           </button>
-          <button
-            className="btn primary lg"
-            onClick={handleGenerateOutline}
-            type="button"
-          >
-            章立て案を生成する →
-          </button>
+          {!isTranslation ? (
+            <button
+              className="btn primary lg"
+              onClick={handleGenerateOutline}
+              type="button"
+            >
+              章立て案を生成する →
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -202,6 +300,176 @@ export default function InterviewNotesPage() {
               </div>
             </div>
           ) : null}
+          {project.genre === "news" ? (
+            <>
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="news-type">記事種別</label>
+                  <select
+                    id="news-type"
+                    className="input"
+                    value={project.newsMeta?.newsType ?? "straight"}
+                    onChange={(e) =>
+                      updateField("newsMeta", {
+                        outlet: project.newsMeta?.outlet ?? "",
+                        newsType: e.target.value as NewsType,
+                        angle: project.newsMeta?.angle ?? "",
+                        audience: project.newsMeta?.audience ?? "",
+                        headlineDraft: project.newsMeta?.headlineDraft ?? "",
+                      })
+                    }
+                  >
+                    {NEWS_TYPE_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                  <p className="help">記事種別で構成の規律（逆ピラミッド等）が切り替わります。</p>
+                </div>
+                <div className="field">
+                  <label htmlFor="news-outlet">想定媒体</label>
+                  <input
+                    id="news-outlet"
+                    type="text"
+                    className="input"
+                    value={project.newsMeta?.outlet ?? ""}
+                    onChange={(e) =>
+                      updateField("newsMeta", {
+                        outlet: e.target.value,
+                        newsType: project.newsMeta?.newsType ?? "straight",
+                        angle: project.newsMeta?.angle ?? "",
+                        audience: project.newsMeta?.audience ?? "",
+                        headlineDraft: project.newsMeta?.headlineDraft ?? "",
+                      })
+                    }
+                    placeholder="例：地方紙Web版 / 業界専門メディア"
+                  />
+                </div>
+              </div>
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="news-angle">切り口・アングル</label>
+                  <input
+                    id="news-angle"
+                    type="text"
+                    className="input"
+                    value={project.newsMeta?.angle ?? ""}
+                    onChange={(e) =>
+                      updateField("newsMeta", {
+                        outlet: project.newsMeta?.outlet ?? "",
+                        newsType: project.newsMeta?.newsType ?? "straight",
+                        angle: e.target.value,
+                        audience: project.newsMeta?.audience ?? "",
+                        headlineDraft: project.newsMeta?.headlineDraft ?? "",
+                      })
+                    }
+                    placeholder="この記事は何のニュースか（例：市の新制度が中小企業に与える影響）"
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="news-audience">想定読者</label>
+                  <input
+                    id="news-audience"
+                    type="text"
+                    className="input"
+                    value={project.newsMeta?.audience ?? ""}
+                    onChange={(e) =>
+                      updateField("newsMeta", {
+                        outlet: project.newsMeta?.outlet ?? "",
+                        newsType: project.newsMeta?.newsType ?? "straight",
+                        angle: project.newsMeta?.angle ?? "",
+                        audience: e.target.value,
+                        headlineDraft: project.newsMeta?.headlineDraft ?? "",
+                      })
+                    }
+                    placeholder="例：地域の中小企業経営者"
+                  />
+                </div>
+              </div>
+            </>
+          ) : null}
+          {isTranslation ? (
+            <>
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="tr-source-lang">原文の言語</label>
+                  <select
+                    id="tr-source-lang"
+                    className="input"
+                    value={project.translationMeta?.sourceLang ?? "en"}
+                    onChange={(e) => {
+                      const sourceLang = e.target.value as LangCode;
+                      updateField("translationMeta", {
+                        sourceLang,
+                        // 日⇄英の2言語のうちは反対側を自動で選ぶ
+                        targetLang: sourceLang === "ja" ? "en" : "ja",
+                        workType: project.translationMeta?.workType ?? "book",
+                        stylePolicy: project.translationMeta?.stylePolicy ?? "",
+                        sourceFilename: project.translationMeta?.sourceFilename,
+                        sourceCharCount: project.translationMeta?.sourceCharCount,
+                      });
+                    }}
+                  >
+                    {LANGUAGE_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                  <p className="help">
+                    訳文は{project.translationMeta?.sourceLang === "ja" ? "英語" : "日本語"}になります（他言語は今後追加予定）。
+                  </p>
+                </div>
+                <div className="field">
+                  <label htmlFor="tr-work-type">原文の種別</label>
+                  <select
+                    id="tr-work-type"
+                    className="input"
+                    value={project.translationMeta?.workType ?? "book"}
+                    onChange={(e) =>
+                      updateField("translationMeta", {
+                        sourceLang: project.translationMeta?.sourceLang ?? "en",
+                        targetLang: project.translationMeta?.targetLang ?? "ja",
+                        workType: e.target.value as TranslationWorkType,
+                        stylePolicy: project.translationMeta?.stylePolicy ?? "",
+                        sourceFilename: project.translationMeta?.sourceFilename,
+                        sourceCharCount: project.translationMeta?.sourceCharCount,
+                      })
+                    }
+                  >
+                    {WORK_TYPE_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                  <p className="help">
+                    論文=術語・引用・出典表記の保持、創作=声と文体の再現、など翻訳の規律が切り替わります。
+                  </p>
+                </div>
+              </div>
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="tr-style">文体方針（訳文）</label>
+                  <input
+                    id="tr-style"
+                    type="text"
+                    className="input"
+                    value={project.translationMeta?.stylePolicy ?? ""}
+                    onChange={(e) =>
+                      updateField("translationMeta", {
+                        sourceLang: project.translationMeta?.sourceLang ?? "en",
+                        targetLang: project.translationMeta?.targetLang ?? "ja",
+                        workType: project.translationMeta?.workType ?? "book",
+                        stylePolicy: e.target.value,
+                        sourceFilename: project.translationMeta?.sourceFilename,
+                        sourceCharCount: project.translationMeta?.sourceCharCount,
+                      })
+                    }
+                    placeholder="例：である調・直訳寄り / ですます調・読みやすさ優先 / 敬称は「〜さん」で統一"
+                  />
+                  <p className="help">
+                    用語・固有名詞の訳語は <Link href="/terms">対訳表・用語</Link> で管理します。
+                  </p>
+                </div>
+              </div>
+            </>
+          ) : null}
           {project.genre === "screenplay" ? (
             <div className="field-row">
               <div className="field">
@@ -271,6 +539,128 @@ export default function InterviewNotesPage() {
         </div>
       </div>
 
+      {isTranslation ? (
+        <>
+          <div className="panel">
+            <div className="panel-header">
+              <h2>原文の取り込み</h2>
+              <span className="hint">
+                {project.translationMeta?.sourceFilename
+                  ? `取り込み済み: ${project.translationMeta.sourceFilename}（${(project.translationMeta.sourceCharCount ?? 0).toLocaleString()} 字）`
+                  : "Word / PDF / テキストに対応"}
+              </span>
+            </div>
+            <div className="panel-body">
+              <div className="field" style={{ marginBottom: 12 }}>
+                <label htmlFor="tr-file">ファイルから取り込む（.docx / .pdf / .txt / .md）</label>
+                <input
+                  id="tr-file"
+                  type="file"
+                  className="input"
+                  accept=".docx,.pdf,.txt,.md"
+                  disabled={extracting}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleSourceFile(f);
+                    e.target.value = "";
+                  }}
+                />
+                {extracting ? (
+                  <p className="help"><span className="spinner" /> テキストを抽出しています…</p>
+                ) : (
+                  <p className="help">
+                    原文ファイルは保存されません（テキストのみ抽出します）。4MBを超えるPDFはアップロードに失敗する場合があります。
+                  </p>
+                )}
+              </div>
+              <div className="field" style={{ marginBottom: 4 }}>
+                <label htmlFor="tr-source-text">またはテキストを貼り付け</label>
+                <textarea
+                  id="tr-source-text"
+                  className="input mono"
+                  rows={10}
+                  value={sourceText}
+                  onChange={(e) => setSourceText(e.target.value)}
+                  placeholder={labels.placeholder}
+                />
+                <div className="flex" style={{ marginTop: 8, alignItems: "center", gap: 10 }}>
+                  <button className="btn primary" type="button" onClick={handleSplitPreview}>
+                    章に分割する →
+                  </button>
+                  <span className="hint">{sourceText.length.toLocaleString()} 文字</span>
+                </div>
+                <p className="help">
+                  原文テキストはこの画面では保存されません。「章に分割する」→「この分割で確定」で章・セグメントとしてプロジェクトに保存されます。
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {chapterPreview ? (
+            <div className="panel">
+              <div className="panel-header">
+                <h2>章分割プレビュー（{chapterPreview.length} 章）</h2>
+                <div className="row-actions" style={{ alignItems: "center", gap: 10 }}>
+                  <label className="hint" htmlFor="tr-seg-size" style={{ whiteSpace: "nowrap" }}>
+                    セグメント長
+                  </label>
+                  <select
+                    id="tr-seg-size"
+                    className="input"
+                    style={{ width: "auto" }}
+                    value={segmentChars}
+                    onChange={(e) => setSegmentChars(Number(e.target.value))}
+                  >
+                    <option value={1200}>短め（約1,200字）</option>
+                    <option value={2000}>標準（約2,000字）</option>
+                    <option value={3000}>長め（約3,000字）</option>
+                  </select>
+                  <button className="btn primary" type="button" onClick={handleConfirmSplit}>
+                    この分割で確定 → 翻訳へ
+                  </button>
+                </div>
+              </div>
+              <div className="panel-body dense">
+                <ul className="list-block">
+                  {chapterPreview.map((c, i) => (
+                    <li key={i} className="flex" style={{ gap: 10, alignItems: "center" }}>
+                      <span className="badge gray">第{i + 1}章</span>
+                      <input
+                        className="input"
+                        type="text"
+                        value={c.title}
+                        onChange={(e) =>
+                          setChapterPreview((prev) =>
+                            prev ? prev.map((x, xi) => (xi === i ? { ...x, title: e.target.value } : x)) : prev,
+                          )
+                        }
+                        style={{ flex: 1 }}
+                      />
+                      <span className="hint" style={{ whiteSpace: "nowrap" }}>
+                        {c.text.length.toLocaleString()} 字
+                      </span>
+                      <button
+                        className="btn sm danger"
+                        type="button"
+                        title="この章を分割対象から外す"
+                        onClick={() =>
+                          setChapterPreview((prev) => (prev ? prev.filter((_, xi) => xi !== i) : prev))
+                        }
+                      >
+                        除外
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <p className="help" style={{ marginTop: 8 }}>
+                  章タイトルは編集できます。目次・索引など翻訳不要な章は「除外」してください。
+                  確定すると各章がセグメント（翻訳単位）に分割され、翻訳画面へ移動します。
+                </p>
+              </div>
+            </div>
+          ) : null}
+        </>
+      ) : (
       <div className="panel">
         <div className="panel-header">
           <h2>{labels.panelTitle}</h2>
@@ -295,17 +685,26 @@ export default function InterviewNotesPage() {
           </div>
         </div>
       </div>
+      )}
 
       <div className="panel">
         <div className="panel-header">
           <h2>次のステップ</h2>
         </div>
         <div className="panel-body dense">
-          <ol style={{ margin: 0, paddingLeft: 20, color: "var(--text-soft)", fontSize: 12 }}>
-            <li>「章立て案を生成する」を押すと、時系列型／テーマ型／人物伝型の3案を提示します。</li>
-            <li>構成案画面で1案を選択すると、章ごとに小見出しが自動生成されます。</li>
-            <li>原稿生成画面で小見出しをクリックすると、本文と編集メモがAIから返ります。</li>
-          </ol>
+          {isTranslation ? (
+            <ol style={{ margin: 0, paddingLeft: 20, color: "var(--text-soft)", fontSize: 12 }}>
+              <li>原文を取り込み「章に分割する」→ プレビューを確認して「この分割で確定」。</li>
+              <li>翻訳画面でセグメントを選び「このセグメントを翻訳」。訳抜け・用語統一・表記揺れをAIが自動チェックします。</li>
+              <li>対訳表・用語（ナレッジ）で訳語を確定すると、以降の翻訳とチェックに反映されます。対訳・差分ビューや一括置換も翻訳画面と対訳表画面から使えます。</li>
+            </ol>
+          ) : (
+            <ol style={{ margin: 0, paddingLeft: 20, color: "var(--text-soft)", fontSize: 12 }}>
+              <li>「章立て案を生成する」を押すと、時系列型／テーマ型／人物伝型の3案を提示します。</li>
+              <li>構成案画面で1案を選択すると、章ごとに小見出しが自動生成されます。</li>
+              <li>原稿生成画面で小見出しをクリックすると、本文と編集メモがAIから返ります。</li>
+            </ol>
+          )}
         </div>
       </div>
     </>
