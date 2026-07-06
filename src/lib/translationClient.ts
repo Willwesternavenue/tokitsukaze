@@ -7,6 +7,7 @@
 
 import { postJson } from "./apiClient";
 import {
+  effectiveTermPairs,
   getSelectedReferenceWorks,
   loadPrompts,
   saveSectionAgentReports,
@@ -31,6 +32,9 @@ export function slimProjectForDraft(project: Project, keepSectionId: string): Pr
   if (project.genre !== "translation") return project;
   return {
     ...project,
+    // 参照グローバル対訳表＋プロジェクト固有をマージした実効対訳表を送る
+    // （サーバ側の翻訳者・用語統一チェックはそのまま project.termPairs を読む）
+    termPairs: effectiveTermPairs(project),
     outlineProposals: [],
     selectedOutline: project.selectedOutline
       ? {

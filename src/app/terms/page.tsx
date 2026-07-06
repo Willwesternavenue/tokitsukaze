@@ -3,11 +3,21 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { saveAs } from "file-saver";
-import { loadProject, replaceDraftBody, updateTermPairs } from "@/lib/storage";
+import {
+  createTermSet,
+  deleteTermSet,
+  effectiveTermPairs,
+  getReferencedTermSets,
+  loadProject,
+  loadTermSets,
+  replaceDraftBody,
+  setProjectTermSetIds,
+  updateTermPairs,
+} from "@/lib/storage";
 import { makeId } from "@/lib/ids";
 import { postJson } from "@/lib/apiClient";
 import { generateSectionDraft } from "@/lib/translationClient";
-import type { Project, TermPair } from "@/lib/types";
+import type { Project, TermPair, TermSet } from "@/lib/types";
 
 /**
  * 翻訳書モード: 対訳表・用語のローカライズ作業台。
@@ -145,11 +155,22 @@ export default function TermsPage() {
   const retermCancelRef = useRef(false);
   const importFileRef = useRef<HTMLInputElement>(null);
 
+  // グローバル対訳表（シリーズ物・分野術語集の使い回し）
+  const [allSets, setAllSets] = useState<TermSet[]>([]);
+
   useEffect(() => {
     setProject(loadProject());
+    setAllSets(loadTermSets());
   }, []);
 
+  // プロジェクト固有の対訳表（編集可能な表に出すのはこれだけ）
   const terms = useMemo(() => project?.termPairs ?? [], [project]);
+  // 実効対訳表（参照グローバルセット＋固有をマージ。各スキャン・翻訳の参照元）
+  const effTerms = useMemo(() => (project ? effectiveTermPairs(project) : []), [project, allSets]);
+  const referencedSets = useMemo(
+    () => (project ? getReferencedTermSets(project) : []),
+    [project, allSets],
+  );
 
   // 章・セグメント + 訳文の平坦リスト（検索・置換・スキャンの走査対象）
   const flatSections = useMemo(() => {
@@ -207,9 +228,10 @@ export default function TermsPage() {
   }, [query, flatSections]);
 
   // 表記揺れスキャン: variants が訳文に出現していないか（確定訳語とのミスマッチ）
+  // 参照グローバル対訳表の語も対象にする（effTerms）
   const variantHits: VariantHit[] = useMemo(() => {
     const out: VariantHit[] = [];
-    for (const t of terms) {
+    for (const t of effTerms) {
       for (const v of t.variants ?? []) {
         const needle = v.trim();
         if (!needle || needle === t.target) continue;
@@ -232,12 +254,13 @@ export default function TermsPage() {
       }
     }
     return out;
-  }, [terms, flatSections]);
+  }, [effTerms, flatSections]);
 
   // 対訳表の波及: 原文に原語があるのに訳文に確定訳語が無い翻訳済みセグメント
+  // 参照グローバル対訳表の語も対象にする（effTerms）
   const termMismatches = useMemo(() => {
     const out: { term: TermPair; sections: ReplacePreview[] }[] = [];
-    for (const t of terms) {
+    for (const t of effTerms) {
       if (t.status !== "confirmed" || !t.source.trim() || !t.target.trim()) continue;
       const src = t.source.toLowerCase();
       const sections: ReplacePreview[] = [];
@@ -256,7 +279,7 @@ export default function TermsPage() {
       if (sections.length > 0) out.push({ term: t, sections });
     }
     return out;
-  }, [terms, flatSections]);
+  }, [effTerms, flatSections]);
 
   // 決定論的QAスキャン: 数値転記 / 段落数 / 文字数比率（AI不使用の即時チェック）
   const qaFindings: QaFinding[] = useMemo(() => {
@@ -362,6 +385,58 @@ export default function TermsPage() {
     persistTerms(terms.filter((t) => t.id !== id));
   }
 
+  // ===== グローバル対訳表（セット）の参照・作成・取り込み =====
+
+  function toggleSetRef(setId: string, on: boolean) {
+    const ids = new Set(project?.termSetIds ?? []);
+    if (on) ids.add(setId);
+    else ids.delete(setId);
+    setProject(setProjectTermSetIds([...ids]));
+  }
+
+  function handleSaveAsSet() {
+    const confirmed = terms.filter((t) => t.status === "confirmed" && t.source.trim() && t.target.trim());
+    if (confirmed.length === 0) {
+      setError("グローバル保存できる確定済みの用語がありません。");
+      return;
+    }
+    const name = window.prompt(
+      "グローバル対訳表の名前を入力してください（他プロジェクトから参照できます）。",
+      `${project?.name ?? "用語集"} の対訳表`,
+    );
+    if (name === null) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const set = createTermSet(trimmed, confirmed);
+    setAllSets(loadTermSets());
+    // 作ったセットはこのプロジェクトからも参照状態にする
+    setProject(setProjectTermSetIds([...(project?.termSetIds ?? []), set.id]));
+    setInfo(`グローバル対訳表「${trimmed}」を作成しました（確定語 ${confirmed.length} 件）。`);
+  }
+
+  function handleDeleteSet(setId: string, name: string) {
+    if (!confirm(`グローバル対訳表「${name}」を削除します。参照しているすべてのプロジェクトから外れます。よろしいですか？`)) {
+      return;
+    }
+    deleteTermSet(setId);
+    setAllSets(loadTermSets());
+    setProject(loadProject());
+    setInfo(`グローバル対訳表「${name}」を削除しました。`);
+  }
+
+  function handleCopySetIntoProject(set: TermSet) {
+    const known = new Set(terms.map((t) => t.source.toLowerCase()));
+    const fresh = set.terms
+      .filter((t) => t.source.trim() && !known.has(t.source.toLowerCase()))
+      .map((t) => ({ ...t, id: makeId("term") }));
+    if (fresh.length === 0) {
+      setInfo("取り込める新しい用語はありませんでした（すべて固有の対訳表に存在）。");
+      return;
+    }
+    persistTerms([...terms, ...fresh]);
+    setInfo(`「${set.name}」から ${fresh.length} 件をプロジェクト固有の対訳表に取り込みました。`);
+  }
+
   async function handleExtract() {
     if (!project) return;
     setError(null);
@@ -378,11 +453,12 @@ export default function TermsPage() {
     try {
       const r = await postJson<{ terms?: TermPair[] }>("/api/extract-terms", {
         pairs,
-        existingTerms: terms.map((t) => ({ source: t.source, target: t.target })),
+        // 参照グローバルセットの語も「既知」として渡し、重複抽出を避ける
+        existingTerms: effTerms.map((t) => ({ source: t.source, target: t.target })),
       });
       if (!r.ok) throw new Error(r.error ?? "用語抽出に失敗しました。");
       const incoming = r.data?.terms ?? [];
-      const known = new Set(terms.map((t) => t.source.toLowerCase()));
+      const known = new Set(effTerms.map((t) => t.source.toLowerCase()));
       const fresh = incoming.filter((t) => !known.has(t.source.toLowerCase()));
       if (fresh.length === 0) {
         setInfo("新しい用語候補は見つかりませんでした。");
@@ -636,7 +712,58 @@ export default function TermsPage() {
 
       <div className="panel">
         <div className="panel-header">
-          <h2>対訳表（{terms.length} 語{candidateCount > 0 ? ` / 候補 ${candidateCount}` : ""}）</h2>
+          <h2>グローバル対訳表（参照）</h2>
+          <button className="btn sm" type="button" onClick={handleSaveAsSet} title="現在の確定語をグローバル対訳表として保存し、他プロジェクトから使い回す">
+            確定語をグローバル保存
+          </button>
+        </div>
+        <div className="panel-body dense">
+          <p className="help" style={{ marginBottom: 10 }}>
+            シリーズ物や分野の術語集を、プロジェクトをまたいで使い回せます。参照した対訳表の語は
+            翻訳・用語統一・表記揺れ・適用チェックに反映されます（同じ原語はこのプロジェクト固有の語が優先）。
+          </p>
+          {allSets.length === 0 ? (
+            <div className="empty-state">
+              グローバル対訳表はまだありません。下の対訳表を整えて「確定語をグローバル保存」で作成できます。
+            </div>
+          ) : (
+            <ul className="list-block">
+              {allSets.map((s) => {
+                const on = (project.termSetIds ?? []).includes(s.id);
+                return (
+                  <li key={s.id} className="flex" style={{ gap: 10, alignItems: "center" }}>
+                    <label className="staff-toggle" style={{ flex: 1 }}>
+                      <input type="checkbox" checked={on} onChange={(e) => toggleSetRef(s.id, e.target.checked)} />
+                      <span>
+                        <strong>{s.name}</strong>
+                        <span className="muted" style={{ fontSize: 11, marginLeft: 8 }}>
+                          {s.terms.length} 語{s.description ? ` — ${s.description}` : ""}
+                        </span>
+                      </span>
+                    </label>
+                    <button className="btn sm" type="button" onClick={() => handleCopySetIntoProject(s)} title="このセットの語をプロジェクト固有の対訳表に取り込む（編集可能になる）">
+                      固有に取り込む
+                    </button>
+                    <button className="btn sm danger" type="button" onClick={() => handleDeleteSet(s.id, s.name)}>
+                      削除
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {referencedSets.length > 0 ? (
+            <p className="help" style={{ marginTop: 8 }}>
+              参照中: {referencedSets.map((s) => s.name).join("、")}（実効対訳表 計 {effTerms.length} 語）。
+              参照セットの語は下の編集表には出ません（読み取り専用）。
+            </p>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-header">
+          <h2>対訳表（このプロジェクト固有・{terms.length} 語{candidateCount > 0 ? ` / 候補 ${candidateCount}` : ""}）</h2>
           <span className="hint">原語 → 確定訳語。NG表記に入れた語は表記揺れスキャンの対象になります</span>
         </div>
         <div className="panel-body dense">

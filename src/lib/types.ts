@@ -133,6 +133,8 @@ export type Project = {
   translationMeta?: TranslationMeta;
   /** 翻訳書: 対訳表（用語の確定訳語と揺れ表記）。論文モードでも流用予定 */
   termPairs?: TermPair[];
+  /** 翻訳書: 参照するグローバル対訳表のID（本体はグローバル localStorage） */
+  termSetIds?: string[];
   // ===== 参照ライブラリ（このプロジェクトが参照する作品のID。ライブラリ本体はグローバル）=====
   referenceWorkIds?: string[];
   // ===== Nav 再構成: AIスタッフのトグルと診断結果の永続化 =====
@@ -267,6 +269,21 @@ export type TermPair = {
   variants: string[];
   notes?: string;
   status: "confirmed" | "candidate";
+};
+
+/**
+ * グローバル対訳表（プロジェクト横断の用語セット）。
+ * 参照ライブラリと同じパターン: 本体はグローバル localStorage、プロジェクトは
+ * Project.termSetIds で参照する。シリーズ物の翻訳や、論文モードでの分野術語集の
+ * 使い回しを想定。同じ原語がある場合はプロジェクト固有の定義が優先される。
+ */
+export type TermSet = {
+  id: string;
+  name: string;
+  description?: string;
+  terms: TermPair[];
+  createdAt: string;
+  updatedAt: string;
 };
 
 // ===== 参照ライブラリ（過去作品・参照作品の「作品カルテ」）=====

@@ -17,6 +17,8 @@ const KEY_OLD_PROJECT_V1 = "kikigaki:project:v1";
 const KEY_PROMPTS = "kikigaki:prompts:v1";
 // 参照ライブラリはプロジェクト横断のグローバル（プロンプトと同じパターン）
 const KEY_LIBRARY = "akikaze:library:v1";
+// グローバル対訳表（シリーズ物・分野術語集の使い回し。参照ライブラリと同パターン）
+const KEY_TERMSETS = "akikaze:termsets:v1";
 
 export function isBrowser(): boolean {
   return typeof window !== "undefined";
@@ -106,6 +108,7 @@ function mergeDefaults(p: Project): Project {
     newsMeta: (p as any).newsMeta ?? undefined,
     translationMeta: (p as any).translationMeta ?? undefined,
     termPairs: Array.isArray((p as any).termPairs) ? (p as any).termPairs : [],
+    termSetIds: Array.isArray((p as any).termSetIds) ? (p as any).termSetIds : [],
     referenceWorkIds: Array.isArray((p as any).referenceWorkIds)
       ? (p as any).referenceWorkIds
       : [],
@@ -533,6 +536,97 @@ export function updateTranslationMeta(meta: import("./types").TranslationMeta): 
 
 export function updateTermPairs(terms: import("./types").TermPair[]): Project {
   return updateProject((p) => ({ ...p, termPairs: terms }));
+}
+
+// ===== グローバル対訳表（プロジェクト横断。参照ライブラリと同じパターン）=====
+
+export function loadTermSets(): import("./types").TermSet[] {
+  if (!isBrowser()) return [];
+  const existing = safeParse<import("./types").TermSet[]>(localStorage.getItem(KEY_TERMSETS));
+  return existing && Array.isArray(existing) ? existing : [];
+}
+
+export function saveTermSets(sets: import("./types").TermSet[]): void {
+  if (!isBrowser()) return;
+  localStorage.setItem(KEY_TERMSETS, JSON.stringify(sets));
+}
+
+/** 現在の対訳表からグローバル対訳表（セット）を作成する */
+export function createTermSet(
+  name: string,
+  terms: import("./types").TermPair[],
+  description?: string,
+): import("./types").TermSet {
+  const set: import("./types").TermSet = {
+    id: makeId("termset"),
+    name,
+    description,
+    // セットに入れる語は id を振り直し、status は confirmed に寄せる（使い回す確定語集の想定）
+    terms: terms.map((t) => ({ ...t, id: makeId("term"), status: "confirmed" as const })),
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+  };
+  saveTermSets([...loadTermSets(), set]);
+  return set;
+}
+
+export function updateTermSet(set: import("./types").TermSet): import("./types").TermSet[] {
+  const next = loadTermSets().map((s) =>
+    s.id === set.id ? { ...set, updatedAt: nowIso() } : s,
+  );
+  saveTermSets(next);
+  return next;
+}
+
+export function deleteTermSet(id: string): import("./types").TermSet[] {
+  const next = loadTermSets().filter((s) => s.id !== id);
+  saveTermSets(next);
+  // どのプロジェクトの参照からも外す
+  const arr = loadAll();
+  let changed = false;
+  const cleaned = arr.map((p) => {
+    if (p.termSetIds?.includes(id)) {
+      changed = true;
+      return { ...p, termSetIds: p.termSetIds.filter((x) => x !== id) };
+    }
+    return p;
+  });
+  if (changed) saveAll(cleaned);
+  return next;
+}
+
+/** このプロジェクトが参照するグローバル対訳表のID */
+export function setProjectTermSetIds(ids: string[]): Project {
+  return updateProject((p) => ({ ...p, termSetIds: ids }));
+}
+
+/** 現在のプロジェクトが参照しているグローバル対訳表の本体を返す */
+export function getReferencedTermSets(project: Project): import("./types").TermSet[] {
+  const ids = new Set(project.termSetIds ?? []);
+  if (ids.size === 0) return [];
+  return loadTermSets().filter((s) => ids.has(s.id));
+}
+
+/**
+ * 実効対訳表: 参照グローバルセットの語 ＋ プロジェクト固有の語をマージして返す。
+ * 同じ原語（source、大小文字無視）はプロジェクト固有の定義が優先される。
+ * 翻訳の system prompt と各チェック（用語統一・表記揺れ・適用チェック）の参照元になる。
+ */
+export function effectiveTermPairs(project: Project): import("./types").TermPair[] {
+  const map = new Map<string, import("./types").TermPair>();
+  const keyOf = (t: import("./types").TermPair) => t.source.trim().toLowerCase();
+  for (const s of getReferencedTermSets(project)) {
+    for (const t of s.terms) {
+      const k = keyOf(t);
+      if (k) map.set(k, t);
+    }
+  }
+  // プロジェクト固有が最後に上書き（同一原語はプロジェクトの定義が勝つ）
+  for (const t of project.termPairs ?? []) {
+    const k = keyOf(t);
+    if (k) map.set(k, t);
+  }
+  return [...map.values()];
 }
 
 /**

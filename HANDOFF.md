@@ -125,6 +125,12 @@ agentToggles / sectionAgentReports`。
   /writer と /terms が共用）。左ペインに翻訳進捗ゲージ
 - **/terms の品質運用**: 決定論的QAスキャン（数値転記・段落数・文字数比率）、
   用語の適用チェック（確定訳語が未適用のセグメント検出→一括再翻訳）、対訳表のCSV入出力
+- **グローバル対訳表（2層）**: `akikaze:termsets:v1`（`TermSet[]`）に本体、`Project.termSetIds` で参照
+  （参照ライブラリと同パターン）。`effectiveTermPairs(project)` が参照セット＋固有をマージ（同一原語は
+  固有優先）。実効表を `slimProjectForDraft` が termPairs に載せて翻訳APIへ送るためサーバ側は無改修。
+  /terms のスキャン（表記揺れ・適用チェック・AI抽出の既知判定）も実効表を使う。
+  UI: /terms「グローバル対訳表（参照）」パネルで参照ON/OFF・確定語からセット作成・固有へ取り込み・削除。
+  シリーズ物と論文モードの分野術語集の使い回しが狙い
 
 ## 画面一覧
 

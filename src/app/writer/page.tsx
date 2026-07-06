@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   addSectionToChapter,
+  effectiveTermPairs,
   loadProject,
   loadPrompts,
   removeSectionFromOutline,
@@ -146,8 +147,9 @@ export default function WriterPage() {
     return { total, translated, perChapter };
   }, [isTranslation, project, draftMap]);
 
+  // 実効対訳表（参照グローバルセット含む）の確定語数。ワークフロー案内の表示判定に使う
   const confirmedTermCount = useMemo(
-    () => (project?.termPairs ?? []).filter((t) => t.status === "confirmed").length,
+    () => (project ? effectiveTermPairs(project).filter((t) => t.status === "confirmed").length : 0),
     [project],
   );
 
