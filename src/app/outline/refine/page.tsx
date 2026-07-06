@@ -46,6 +46,29 @@ export default function OutlineRefinePage() {
   const unit = UNIT_BY_GENRE[project.genre] ?? "章";
   const outline = project.selectedOutline;
 
+  // 翻訳書: 構成は原文由来（各セグメントが原文を保持）。AIで構成を書き換える調整は
+  // 原文との対応を壊すため、この画面は使わない
+  if (project.genre === "translation") {
+    return (
+      <>
+        <div className="page-header">
+          <div>
+            <h1>構成の調整</h1>
+            <p className="subtitle">翻訳書モードでは構成の調整は行いません。</p>
+          </div>
+        </div>
+        <div className="empty-state">
+          翻訳書の章・セグメントは原文の構造から作られます。分割をやり直す場合は原文取り込み画面へ、
+          翻訳を進める場合は翻訳画面へ進んでください。
+          <div style={{ marginTop: 12, display: "flex", gap: 8, justifyContent: "center" }}>
+            <Link href="/" className="btn">原文取り込みへ</Link>
+            <Link href="/writer" className="btn primary">翻訳画面へ →</Link>
+          </div>
+        </div>
+      </>
+    );
+  }
+
   if (!outline) {
     return (
       <>

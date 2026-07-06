@@ -752,24 +752,32 @@ export default function WriterPage() {
                       />
                     </div>
                     <div className="flex" style={{ alignItems: "flex-start" }}>
-                      <input
-                        className="input"
-                        type="text"
-                        value={headingInstruction}
-                        onChange={(e) => setHeadingInstruction(e.target.value)}
-                        placeholder="AIで小見出しを調整する指示（例：もっと具体的に / 読者の疑問形に）"
-                        style={{ flex: 1 }}
-                      />
-                      <button
-                        className="btn"
-                        type="button"
-                        onClick={handleRefineHeading}
-                        disabled={refiningHeading}
-                        style={{ whiteSpace: "nowrap" }}
-                      >
-                        {refiningHeading ? <span className="spinner" /> : null}
-                        AIで修正
-                      </button>
+                      {!isTranslation ? (
+                        <>
+                          <input
+                            className="input"
+                            type="text"
+                            value={headingInstruction}
+                            onChange={(e) => setHeadingInstruction(e.target.value)}
+                            placeholder="AIで小見出しを調整する指示（例：もっと具体的に / 読者の疑問形に）"
+                            style={{ flex: 1 }}
+                          />
+                          <button
+                            className="btn"
+                            type="button"
+                            onClick={handleRefineHeading}
+                            disabled={refiningHeading}
+                            style={{ whiteSpace: "nowrap" }}
+                          >
+                            {refiningHeading ? <span className="spinner" /> : null}
+                            AIで修正
+                          </button>
+                        </>
+                      ) : (
+                        <span className="hint" style={{ flex: 1 }}>
+                          セグメントのタイトル・概要は手動で編集できます（原文は変更されません）。
+                        </span>
+                      )}
                       <button
                         className="btn danger"
                         type="button"

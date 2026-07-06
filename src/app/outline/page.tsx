@@ -33,6 +33,9 @@ export default function OutlinePage() {
   const genreCfg = getGenreConfig(project?.genre);
   const structureTitle = genreCfg.stages.structure.pageTitle;
   const typeLabel = genreCfg.outlineTypeLabels ?? DEFAULT_TYPE_LABEL;
+  // 翻訳書: 構成は原文から機械的に作られたもの。選び直し・AI再生成は原文（sourceText）を
+  // 失うリスクがあるため、この画面は表示専用にする（分割のやり直しは原文取り込み画面で行う）
+  const isTranslation = project?.genre === "translation";
 
   if (!project) {
     return (
@@ -113,16 +116,20 @@ export default function OutlinePage() {
           </p>
         </div>
         <div className="actions">
-          <Link className="btn" href="/">取材メモへ戻る</Link>
-          <button
-            className="btn"
-            onClick={handleRegenerate}
-            disabled={loading}
-            type="button"
-          >
-            {loading ? <span className="spinner" /> : null}
-            {loading ? "再生成中…" : "再生成"}
-          </button>
+          <Link className="btn" href="/">{isTranslation ? "原文取り込みへ戻る" : "取材メモへ戻る"}</Link>
+          {!isTranslation ? (
+            <button
+              className="btn"
+              onClick={handleRegenerate}
+              disabled={loading}
+              type="button"
+            >
+              {loading ? <span className="spinner" /> : null}
+              {loading ? "再生成中…" : "再生成"}
+            </button>
+          ) : (
+            <Link className="btn primary" href="/writer">翻訳画面へ →</Link>
+          )}
         </div>
       </div>
 
@@ -168,14 +175,20 @@ export default function OutlinePage() {
                 </div>
                 <div className="panel-body" style={{ borderTop: "1px solid var(--border)", display: "flex", gap: 8, alignItems: "center" }}>
                   {isSelected ? <span className="badge success">選択中</span> : null}
-                  <button
-                    className="btn primary"
-                    style={{ marginLeft: "auto" }}
-                    onClick={() => handleSelect(p.id)}
-                    type="button"
-                  >
-                    この案で調整する →
-                  </button>
+                  {!isTranslation ? (
+                    <button
+                      className="btn primary"
+                      style={{ marginLeft: "auto" }}
+                      onClick={() => handleSelect(p.id)}
+                      type="button"
+                    >
+                      この案で調整する →
+                    </button>
+                  ) : (
+                    <span className="hint" style={{ marginLeft: "auto" }}>
+                      表示専用（分割のやり直しは原文取り込み画面で）
+                    </span>
+                  )}
                 </div>
               </section>
             );

@@ -291,13 +291,44 @@ export function setOutlineProposals(proposals: OutlineProposal[]): Project {
   return updateProject((p) => ({ ...p, outlineProposals: proposals }));
 }
 
+/**
+ * 翻訳書モードの保険: 新しい構成に sourceText（セグメント原文）が無い場合、
+ * 旧 selectedOutline の同じ section id から引き継ぐ。
+ * AIが返す構成JSON（refine-outline 等）や outlineProposals の軽量コピーには
+ * sourceText が含まれないため、無防備に置き換えると原文が全損する。
+ */
+function preserveSourceText(
+  next: OutlineProposal,
+  old: OutlineProposal | undefined,
+): OutlineProposal {
+  if (!old) return next;
+  const oldSource = new Map<string, string>();
+  for (const c of old.chapters) {
+    for (const s of c.sections ?? []) {
+      if (s.sourceText) oldSource.set(s.id, s.sourceText);
+    }
+  }
+  if (oldSource.size === 0) return next;
+  return {
+    ...next,
+    chapters: next.chapters.map((c) => ({
+      ...c,
+      sections: (c.sections ?? []).map((s) =>
+        s.sourceText ? s : { ...s, sourceText: oldSource.get(s.id) },
+      ),
+    })),
+  };
+}
+
 export function selectOutline(outlineId: string): Project {
   return updateProject((p) => {
     const chosen = p.outlineProposals.find((o) => o.id === outlineId);
     if (!chosen) return p;
+    const outline =
+      p.genre === "translation" ? preserveSourceText(chosen, p.selectedOutline) : chosen;
     return {
       ...p,
-      selectedOutline: chosen,
+      selectedOutline: outline,
       writingMemory: {
         ...p.writingMemory,
         selectedOutlineSummary: `${chosen.title}：${chosen.concept}`,
@@ -307,7 +338,11 @@ export function selectOutline(outlineId: string): Project {
 }
 
 export function replaceSelectedOutline(outline: OutlineProposal): Project {
-  return updateProject((p) => ({ ...p, selectedOutline: outline }));
+  return updateProject((p) => ({
+    ...p,
+    selectedOutline:
+      p.genre === "translation" ? preserveSourceText(outline, p.selectedOutline) : outline,
+  }));
 }
 
 // ===== 選択中構成の小見出し（section）を個別に編集 =====
