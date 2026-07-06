@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { saveAs } from "file-saver";
 import { loadProject, replaceDraftBody, updateTermPairs } from "@/lib/storage";
 import { makeId } from "@/lib/ids";
 import { postJson } from "@/lib/apiClient";
+import { generateSectionDraft } from "@/lib/translationClient";
 import type { Project, TermPair } from "@/lib/types";
 
 /**
@@ -37,6 +39,76 @@ type VariantHit = {
   sections: ReplacePreview[];
 };
 
+// ===== 決定論的QAスキャン用ヘルパ =====
+
+/** 全角数字→半角、桁区切りカンマ除去（数値突き合わせ用の正規化） */
+function normalizeDigits(text: string): string {
+  return text
+    .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+    .replace(/(\d)[,，](?=\d{3})/g, "$1");
+}
+
+/** 原文から突き合わせ対象の数値トークンを抽出（1桁だけの数字はノイズが多いので除外） */
+function extractNumbers(text: string): string[] {
+  const normalized = normalizeDigits(text);
+  const tokens = normalized.match(/\d+(?:\.\d+)?/g) ?? [];
+  return [...new Set(tokens.filter((t) => t.length >= 2 || Number(t) >= 10))];
+}
+
+function countParagraphs(text: string): number {
+  return text
+    .split(/\n+/)
+    .map((p) => p.trim())
+    .filter(Boolean).length;
+}
+
+type QaIssue = { kind: "number" | "paragraph" | "ratio"; message: string };
+type QaFinding = {
+  chapterId: string;
+  sectionId: string;
+  chapterTitle: string;
+  sectionTitle: string;
+  issues: QaIssue[];
+};
+
+// ===== CSV 入出力用ヘルパ =====
+
+function csvEscape(v: string): string {
+  return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+}
+
+/** ダブルクォート対応の簡易CSVパーサ（区切りはカンマ/タブを自動判定） */
+function parseCsv(text: string): string[][] {
+  const delim = text.includes("\t") ? "\t" : ",";
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let inQuotes = false;
+  const src = text.replace(/\r\n?/g, "\n");
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (src[i + 1] === '"') { cell += '"'; i++; }
+        else inQuotes = false;
+      } else cell += ch;
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === delim) {
+      row.push(cell); cell = "";
+    } else if (ch === "\n") {
+      row.push(cell); cell = "";
+      if (row.some((c) => c.trim())) rows.push(row);
+      row = [];
+    } else {
+      cell += ch;
+    }
+  }
+  row.push(cell);
+  if (row.some((c) => c.trim())) rows.push(row);
+  return rows;
+}
+
 function countOccurrences(text: string, needle: string): number {
   if (!needle) return 0;
   let count = 0;
@@ -68,6 +140,10 @@ export default function TermsPage() {
   const [replaceTo, setReplaceTo] = useState("");
   const [replacePreview, setReplacePreview] = useState<ReplacePreview[] | null>(null);
   const [replacing, setReplacing] = useState(false);
+  // 用語の適用チェック → 一括再翻訳
+  const [retermProgress, setRetermProgress] = useState<string | null>(null);
+  const retermCancelRef = useRef(false);
+  const importFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setProject(loadProject());
@@ -157,6 +233,84 @@ export default function TermsPage() {
     }
     return out;
   }, [terms, flatSections]);
+
+  // 対訳表の波及: 原文に原語があるのに訳文に確定訳語が無い翻訳済みセグメント
+  const termMismatches = useMemo(() => {
+    const out: { term: TermPair; sections: ReplacePreview[] }[] = [];
+    for (const t of terms) {
+      if (t.status !== "confirmed" || !t.source.trim() || !t.target.trim()) continue;
+      const src = t.source.toLowerCase();
+      const sections: ReplacePreview[] = [];
+      for (const s of flatSections) {
+        if (!s.body || !s.sourceText) continue;
+        if (s.sourceText.toLowerCase().includes(src) && !s.body.includes(t.target)) {
+          sections.push({
+            chapterId: s.chapterId,
+            sectionId: s.sectionId,
+            chapterTitle: s.chapterTitle,
+            sectionTitle: s.sectionTitle,
+            count: countOccurrences(s.sourceText.toLowerCase(), src),
+          });
+        }
+      }
+      if (sections.length > 0) out.push({ term: t, sections });
+    }
+    return out;
+  }, [terms, flatSections]);
+
+  // 決定論的QAスキャン: 数値転記 / 段落数 / 文字数比率（AI不使用の即時チェック）
+  const qaFindings: QaFinding[] = useMemo(() => {
+    const sourceLang = project?.translationMeta?.sourceLang ?? "en";
+    // 文字数比率（訳文/原文）の目安。外れたら訳抜け・水増しのシグナル
+    const [ratioMin, ratioMax] = sourceLang === "en" ? [0.3, 1.15] : [0.9, 3.2];
+    const out: QaFinding[] = [];
+    for (const s of flatSections) {
+      if (!s.sourceText || !s.body) continue;
+      const issues: QaIssue[] = [];
+
+      const bodyNorm = normalizeDigits(s.body);
+      const missing = extractNumbers(s.sourceText).filter((n) => !bodyNorm.includes(n));
+      if (missing.length > 0) {
+        issues.push({
+          kind: "number",
+          message: `原文の数値が訳文に見つかりません: ${missing.slice(0, 8).join(", ")}${missing.length > 8 ? " …" : ""}（漢数字・単位換算で表現している場合は問題ありません）`,
+        });
+      }
+
+      const srcParas = countParagraphs(s.sourceText);
+      const tgtParas = countParagraphs(s.body);
+      if (Math.abs(srcParas - tgtParas) >= 2) {
+        issues.push({
+          kind: "paragraph",
+          message: `段落数が原文 ${srcParas} に対し訳文 ${tgtParas}。段落の統合・分割か訳抜けの可能性`,
+        });
+      }
+
+      const ratio = s.body.length / s.sourceText.length;
+      if (ratio < ratioMin || ratio > ratioMax) {
+        issues.push({
+          kind: "ratio",
+          message: `文字数比率 ${ratio.toFixed(2)}（訳文${s.body.length.toLocaleString()}字 / 原文${s.sourceText.length.toLocaleString()}字）が目安 ${ratioMin}〜${ratioMax} の範囲外。${ratio < ratioMin ? "訳抜け" : "加筆・水増し"}の可能性`,
+        });
+      }
+
+      if (issues.length > 0) {
+        out.push({
+          chapterId: s.chapterId,
+          sectionId: s.sectionId,
+          chapterTitle: s.chapterTitle,
+          sectionTitle: s.sectionTitle,
+          issues,
+        });
+      }
+    }
+    return out;
+  }, [flatSections, project]);
+
+  const translatedCount = useMemo(
+    () => flatSections.filter((s) => s.sourceText && s.body).length,
+    [flatSections],
+  );
 
   if (!project) {
     return (
@@ -318,6 +472,108 @@ export default function TermsPage() {
     setInfo(`「${hit.variant}」→「${hit.term.target}」：${total} 箇所を統一しました。`);
   }
 
+  // ===== CSV 入出力 =====
+
+  function handleExportCsv() {
+    if (terms.length === 0) {
+      setError("エクスポートする用語がありません。");
+      return;
+    }
+    const header = "source,target,variants,notes,status";
+    const rows = terms.map((t) =>
+      [
+        csvEscape(t.source),
+        csvEscape(t.target),
+        csvEscape((t.variants ?? []).join("|")),
+        csvEscape(t.notes ?? ""),
+        t.status,
+      ].join(","),
+    );
+    // BOM付きUTF-8（Excelでの文字化け防止）
+    const blob = new Blob(["﻿" + [header, ...rows].join("\n")], {
+      type: "text/csv;charset=utf-8",
+    });
+    saveAs(blob, `対訳表_${project?.name ?? "project"}.csv`);
+  }
+
+  async function handleImportCsv(file: File) {
+    setError(null);
+    setInfo(null);
+    try {
+      const text = await file.text();
+      const rows = parseCsv(text.replace(/^﻿/, ""));
+      if (rows.length === 0) throw new Error("CSVに行がありません。");
+      // ヘッダ行（source,target,...）はスキップ
+      const body = rows[0][0]?.trim().toLowerCase() === "source" ? rows.slice(1) : rows;
+      const known = new Set(terms.map((t) => t.source.toLowerCase()));
+      const imported: TermPair[] = [];
+      for (const r of body) {
+        const source = (r[0] ?? "").trim();
+        const target = (r[1] ?? "").trim();
+        if (!source || !target || known.has(source.toLowerCase())) continue;
+        known.add(source.toLowerCase());
+        imported.push({
+          id: makeId("term"),
+          source,
+          target,
+          variants: (r[2] ?? "")
+            .split(/[|、]/)
+            .map((v) => v.trim())
+            .filter(Boolean),
+          notes: (r[3] ?? "").trim() || undefined,
+          status: (r[4] ?? "").trim() === "candidate" ? "candidate" : "confirmed",
+        });
+      }
+      if (imported.length === 0) {
+        setInfo("追加できる新しい用語はありませんでした（既存と重複、または空行）。");
+        return;
+      }
+      persistTerms([...terms, ...imported]);
+      setInfo(`CSVから ${imported.length} 語をインポートしました。`);
+    } catch (e) {
+      setError(`CSVの読み込みに失敗しました：${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  // ===== 対訳表の波及: 確定訳語が未適用のセグメントを一括再翻訳 =====
+
+  async function handleRetranslate(targets: ReplacePreview[], label: string) {
+    if (!project || retermProgress !== null) return;
+    if (
+      !confirm(
+        `${label}：${targets.length} セグメントを最新の対訳表で再翻訳します（1セグメントあたり数十秒。旧訳文は変更差分に退避されます）。開始しますか？`,
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    retermCancelRef.current = false;
+    let cur = project;
+    const failures: string[] = [];
+    try {
+      for (let i = 0; i < targets.length; i++) {
+        if (retermCancelRef.current) break;
+        const t = targets[i];
+        const chapter = cur.selectedOutline?.chapters.find((c) => c.id === t.chapterId);
+        const section = chapter?.sections.find((s) => s.id === t.sectionId);
+        if (!chapter || !section) continue;
+        setRetermProgress(`${i + 1}/${targets.length}：${chapter.title} / ${section.title} を再翻訳中…`);
+        try {
+          cur = await generateSectionDraft(cur, chapter, section);
+          setProject(cur);
+        } catch (e) {
+          failures.push(`${chapter.title}/${section.title}: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+      setInfo(
+        `再翻訳が終了しました${retermCancelRef.current ? "（中断）" : ""}。` +
+          (failures.length > 0 ? `失敗 ${failures.length} 件：${failures.join(" / ")}` : "失敗はありません。"),
+      );
+    } finally {
+      setRetermProgress(null);
+    }
+  }
+
   const candidateCount = terms.filter((t) => t.status === "candidate").length;
 
   return (
@@ -330,6 +586,28 @@ export default function TermsPage() {
           </p>
         </div>
         <div className="actions">
+          <button className="btn" onClick={handleExportCsv} type="button" title="対訳表をCSVで書き出す">
+            CSV出力
+          </button>
+          <button
+            className="btn"
+            onClick={() => importFileRef.current?.click()}
+            type="button"
+            title="既存の用語集CSV（source,target,variants,notes,status）を取り込む"
+          >
+            CSVインポート
+          </button>
+          <input
+            ref={importFileRef}
+            type="file"
+            accept=".csv,.tsv,.txt"
+            style={{ display: "none" }}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) handleImportCsv(f);
+              e.target.value = "";
+            }}
+          />
           <button className="btn" onClick={handleExtract} disabled={extracting} type="button">
             {extracting ? <span className="spinner" /> : null}
             {extracting ? "抽出中…" : "AIで用語を抽出"}
@@ -342,6 +620,19 @@ export default function TermsPage() {
 
       {error ? <div className="alert" style={{ marginBottom: 16 }}>{error}</div> : null}
       {info ? <div className="alert info" style={{ marginBottom: 16 }}>{info}</div> : null}
+      {retermProgress ? (
+        <div className="alert info" style={{ marginBottom: 16 }}>
+          <span className="spinner" /> {retermProgress}
+          <button
+            className="btn sm"
+            type="button"
+            style={{ marginLeft: 10 }}
+            onClick={() => { retermCancelRef.current = true; }}
+          >
+            中断
+          </button>
+        </div>
+      ) : null}
 
       <div className="panel">
         <div className="panel-header">
@@ -554,6 +845,93 @@ export default function TermsPage() {
               ))}
             </ul>
           )}
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-header">
+          <h2>用語の適用チェック（対訳表の波及）</h2>
+          <span className="hint">
+            原文に原語があるのに、訳文に確定訳語が見当たらない翻訳済みセグメントを検出します
+          </span>
+        </div>
+        <div className="panel-body dense">
+          {terms.filter((t) => t.status === "confirmed").length === 0 ? (
+            <div className="empty-state">
+              確定済みの用語がありません。対訳表で訳語を「確定」すると、ここで適用漏れを検出できます。
+            </div>
+          ) : termMismatches.length === 0 ? (
+            <div className="empty-state">
+              すべての確定訳語が翻訳済みセグメントに適用されています。
+            </div>
+          ) : (
+            <ul className="list-block">
+              {termMismatches.map((m, i) => (
+                <li key={i} className="flex" style={{ gap: 10, alignItems: "center" }}>
+                  <span className="badge warn">{m.sections.length} セグメント</span>
+                  <span style={{ flex: 1 }}>
+                    <strong>{m.term.source} → {m.term.target}</strong> が適用されていない可能性
+                    <span className="muted" style={{ display: "block", fontSize: 11 }}>
+                      {m.sections.map((s) => `${s.chapterTitle}/${s.sectionTitle}`).join("、")}
+                      ／意訳・言い換えの場合は問題ありません
+                    </span>
+                  </span>
+                  <button
+                    className="btn sm"
+                    type="button"
+                    disabled={retermProgress !== null}
+                    onClick={() => handleRetranslate(m.sections, `「${m.term.source} → ${m.term.target}」の適用`)}
+                  >
+                    該当セグメントを再翻訳
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="help" style={{ marginTop: 8 }}>
+            訳語を変更・確定したあとにここを確認すると、用語統一の運用が閉じます。
+            再翻訳は最新の対訳表を使い、旧訳文は翻訳画面の「変更差分」に退避されます。
+          </p>
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-header">
+          <h2>品質スキャン（QA）</h2>
+          <span className="hint">
+            数値転記・段落数・文字数比率をAIなしで即時チェック（翻訳済み {translatedCount} セグメント対象）
+          </span>
+        </div>
+        <div className="panel-body dense">
+          {translatedCount === 0 ? (
+            <div className="empty-state">翻訳済みのセグメントがまだありません。</div>
+          ) : qaFindings.length === 0 ? (
+            <div className="empty-state">
+              機械的チェックでは問題は検出されませんでした（数値の転記・段落数・文字数比率）。
+            </div>
+          ) : (
+            <ul className="list-block">
+              {qaFindings.map((f, i) => (
+                <li key={i}>
+                  <strong>{f.chapterTitle} / {f.sectionTitle}</strong>
+                  <ul style={{ margin: "4px 0 0", paddingLeft: 0, listStyle: "none" }}>
+                    {f.issues.map((issue, j) => (
+                      <li key={j} className="flex" style={{ gap: 8, alignItems: "flex-start", marginTop: 4 }}>
+                        <span className={`badge ${issue.kind === "number" ? "warn" : "gray"}`}>
+                          {issue.kind === "number" ? "数値" : issue.kind === "paragraph" ? "段落" : "分量"}
+                        </span>
+                        <span className="muted" style={{ fontSize: 12 }}>{issue.message}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="help" style={{ marginTop: 8 }}>
+            ここはあくまで機械的なシグナルです。漢数字化・単位換算・段落の意図的な統合は誤検出になります。
+            疑わしいセグメントは翻訳画面の対訳ビューで原文と突き合わせ、必要なら「再翻訳」してください。
+          </p>
         </div>
       </div>
     </>

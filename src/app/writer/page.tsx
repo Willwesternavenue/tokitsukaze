@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   addSectionToChapter,
-  getSelectedReferenceWorks,
   loadProject,
   loadPrompts,
   removeSectionFromOutline,
@@ -30,35 +29,19 @@ import { postJson, startAndPollRun } from "@/lib/apiClient";
 import type { SectionsWorkflowResult } from "@/workflows/sections";
 import { buildScreenplayExtraContext, getGenreConfig } from "@/lib/genreConfig";
 import { diffLines, diffStats } from "@/lib/diff";
+import { generateSectionDraft, listUntranslated } from "@/lib/translationClient";
 
 type Selected = { chapter: Chapter; section: Section } | null;
 
 type TranslationView = "bilingual" | "target" | "diff";
 
-/**
- * 翻訳書モード: API に渡す project を軽量化する。
- * 原文（sourceText）は現在のセクション以外では不要で、書籍全体だと数百KB〜MBになり
- * Vercel の body 制限・プロンプト肥大の原因になるため落とす。bodyHistory も同様。
- */
-function slimProjectForDraft(project: Project, keepSectionId: string): Project {
-  if (project.genre !== "translation") return project;
-  return {
-    ...project,
-    outlineProposals: [],
-    selectedOutline: project.selectedOutline
-      ? {
-          ...project.selectedOutline,
-          chapters: project.selectedOutline.chapters.map((c) => ({
-            ...c,
-            sections: c.sections.map((s) =>
-              s.id === keepSectionId ? s : { ...s, sourceText: undefined },
-            ),
-          })),
-        }
-      : undefined,
-    generatedSections: project.generatedSections.map(({ bodyHistory: _h, ...rest }) => rest),
-  };
-}
+type BatchState = {
+  running: boolean;
+  done: number;
+  total: number;
+  current: string;
+  failures: string[];
+};
 
 const TOD_JA: Record<string, string> = {
   DAY: "昼",
@@ -90,6 +73,9 @@ export default function WriterPage() {
   const [editingBody, setEditingBody] = useState(false);
   const [bodyDraft, setBodyDraft] = useState("");
   const [diffBaseIdx, setDiffBaseIdx] = useState<number | null>(null); // null = 最新の旧版
+  // 翻訳書モード: 一括翻訳
+  const [batch, setBatch] = useState<BatchState | null>(null);
+  const batchCancelRef = useRef(false);
 
   useEffect(() => {
     const p = loadProject();
@@ -128,6 +114,30 @@ export default function WriterPage() {
     project?.generatedSections.forEach((d) => m.set(`${d.chapterId}::${d.sectionId}`, d));
     return m;
   }, [project]);
+
+  // 翻訳書: 章別・全体の翻訳進捗（左ペインのゲージと一括翻訳ボタンの元データ）
+  const trProgress = useMemo(() => {
+    if (!isTranslation || !project?.selectedOutline) return null;
+    let total = 0;
+    let translated = 0;
+    const perChapter = new Map<string, { done: number; total: number }>();
+    for (const c of project.selectedOutline.chapters) {
+      const t = (c.sections ?? []).length;
+      const d = (c.sections ?? []).filter((s) => {
+        const dr = draftMap.get(`${c.id}::${s.id}`);
+        return !!dr?.body?.trim();
+      }).length;
+      total += t;
+      translated += d;
+      perChapter.set(c.id, { done: d, total: t });
+    }
+    return { total, translated, perChapter };
+  }, [isTranslation, project, draftMap]);
+
+  const confirmedTermCount = useMemo(
+    () => (project?.termPairs ?? []).filter((t) => t.status === "confirmed").length,
+    [project],
+  );
 
   const currentDraft: SectionDraft | undefined = useMemo(() => {
     if (!selected) return undefined;
@@ -179,34 +189,8 @@ export default function WriterPage() {
     setError(null);
     setLoading(true);
     try {
-      const prompts = loadPrompts();
-      const base = prompts.find((p) => p.id === genreCfg.pipelinePrompts.draft);
-      const promptTemplate = base ? withStyleRules(base) : undefined;
-      const r = await postJson<{ draft?: SectionDraft; agentReports?: AgentReportSummary[] }>(
-        "/api/generate-draft",
-        {
-          project: slimProjectForDraft(project, selected.section.id),
-          chapter: selected.chapter,
-          section: selected.section,
-          promptTemplate,
-          referenceWorks: getSelectedReferenceWorks(project),
-        },
-      );
-      if (!r.ok) throw new Error(r.error ?? "本文生成に失敗しました。");
-      const draft = r.data?.draft;
-      if (!draft) throw new Error("AIから本文が返りませんでした。");
-      // 翻訳書: 再生成時は旧訳文を版として退避（Diff比較の材料）
-      if (isTranslation && currentDraft?.body) {
-        draft.bodyHistory = [
-          ...(currentDraft.bodyHistory ?? []),
-          { savedAt: currentDraft.updatedAt, body: currentDraft.body, note: "再生成前" },
-        ].slice(-10);
-      }
-      upsertDraft(draft);
-      // 診断結果を project に永続化 (/review 画面の集約元になる)
-      const reports = r.data?.agentReports ?? [];
-      const key = `${draft.chapterId}::${draft.sectionId}`;
-      const next = saveSectionAgentReports(key, reports);
+      // 生成 → 保存 → 診断永続化（翻訳書では旧訳文を bodyHistory に退避）は共通ヘルパで行う
+      const next = await generateSectionDraft(project, selected.chapter, selected.section);
       setProject(next);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -215,31 +199,62 @@ export default function WriterPage() {
     }
   }
 
-  // 指定の章・節を、渡された最新 project を context にして再生成し upsert する（波及再生成用）
+  // 指定の章・節を、渡された最新 project を context にして再生成し upsert する（波及・一括用）
   async function regenerateOne(
     baseProject: Project,
     chapter: Chapter,
     section: Section,
   ): Promise<Project> {
-    const prompts = loadPrompts();
-    const base = prompts.find((p) => p.id === getGenreConfig(baseProject.genre).pipelinePrompts.draft);
-    const promptTemplate = base ? withStyleRules(base) : undefined;
-    const r = await postJson<{ draft?: SectionDraft; agentReports?: AgentReportSummary[] }>(
-      "/api/generate-draft",
-      {
-        project: slimProjectForDraft(baseProject, section.id),
-        chapter,
-        section,
-        promptTemplate,
-        referenceWorks: getSelectedReferenceWorks(baseProject),
-      },
-    );
-    if (!r.ok) throw new Error(r.error ?? "本文生成に失敗しました。");
-    const draft = r.data?.draft;
-    if (!draft) throw new Error("AIから本文が返りませんでした。");
-    upsertDraft(draft);
-    const key = `${draft.chapterId}::${draft.sectionId}`;
-    return saveSectionAgentReports(key, r.data?.agentReports ?? []);
+    return generateSectionDraft(baseProject, chapter, section);
+  }
+
+  // 翻訳書: 未翻訳セグメントを構成順に一括翻訳する（失敗はスキップして継続、中断可能）
+  async function handleBatchTranslate(chapterId?: string) {
+    if (!project || batch?.running) return;
+    const targets = listUntranslated(project, chapterId);
+    if (targets.length === 0) {
+      setError(chapterId ? "この章に未翻訳のセグメントはありません。" : "未翻訳のセグメントはありません。");
+      return;
+    }
+    if (
+      !confirm(
+        `${targets.length} セグメントを順番に翻訳します（1セグメントあたり数十秒）。途中で中断できます。開始しますか？`,
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    batchCancelRef.current = false;
+    const failures: string[] = [];
+    let cur = project;
+    let done = 0;
+    setBatch({ running: true, done, total: targets.length, current: "", failures });
+    for (const t of targets) {
+      if (batchCancelRef.current) break;
+      setBatch({
+        running: true,
+        done,
+        total: targets.length,
+        current: `${t.chapter.title} / ${t.section.title}`,
+        failures: [...failures],
+      });
+      try {
+        cur = await regenerateOne(cur, t.chapter, t.section);
+        setProject(cur);
+      } catch (e) {
+        failures.push(
+          `${t.chapter.title} / ${t.section.title}：${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+      done++;
+    }
+    setBatch({
+      running: false,
+      done,
+      total: targets.length,
+      current: batchCancelRef.current ? "（中断しました）" : "",
+      failures: [...failures],
+    });
   }
 
   // B: この節の編集が下流に与える影響を検出する
@@ -545,6 +560,26 @@ export default function WriterPage() {
           </p>
         </div>
         <div className="actions">
+          {isTranslation && trProgress && trProgress.translated < trProgress.total ? (
+            batch?.running ? (
+              <button
+                className="btn danger"
+                onClick={() => { batchCancelRef.current = true; }}
+                type="button"
+              >
+                一括翻訳を中断
+              </button>
+            ) : (
+              <button
+                className="btn primary"
+                onClick={() => handleBatchTranslate()}
+                disabled={loading}
+                type="button"
+              >
+                未翻訳をすべて翻訳（残り {trProgress.total - trProgress.translated}）
+              </button>
+            )
+          ) : null}
           {isTranslation ? (
             <button className="btn" onClick={handleExportBilingual} disabled={exporting} type="button">
               {exporting ? <span className="spinner" /> : null}
@@ -559,6 +594,42 @@ export default function WriterPage() {
       </div>
 
       {error ? <div className="alert" style={{ marginBottom: 16 }}>{error}</div> : null}
+
+      {batch ? (
+        <div className="alert info" style={{ marginBottom: 16 }}>
+          {batch.running ? (
+            <>
+              <span className="spinner" /> 一括翻訳中 {batch.done + 1}/{batch.total}：{batch.current}
+              {batch.failures.length > 0 ? `（失敗 ${batch.failures.length} 件はスキップ）` : ""}
+            </>
+          ) : (
+            <div className="flex" style={{ alignItems: "flex-start", gap: 10 }}>
+              <span style={{ flex: 1 }}>
+                一括翻訳が終了しました（{batch.done}/{batch.total} 処理
+                {batch.current ? ` ${batch.current}` : ""}
+                {batch.failures.length > 0 ? `、失敗 ${batch.failures.length} 件` : "、失敗なし"}）。
+                {batch.failures.length > 0 ? (
+                  <span style={{ display: "block", fontSize: 11, marginTop: 4 }}>
+                    {batch.failures.map((f, i) => (
+                      <span key={i} style={{ display: "block" }}>・{f}</span>
+                    ))}
+                    失敗分は「未翻訳をすべて翻訳」でもう一度実行すると再開できます。
+                  </span>
+                ) : null}
+              </span>
+              <button className="btn sm" type="button" onClick={() => setBatch(null)}>閉じる</button>
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      {isTranslation && trProgress && trProgress.total > 3 && confirmedTermCount === 0 && trProgress.translated < 4 ? (
+        <div className="alert info" style={{ marginBottom: 16 }}>
+          おすすめの進め方：最初の2〜3セグメントを翻訳 →{" "}
+          <Link href="/terms">対訳表・用語</Link> で「AIで用語を抽出」→ 訳語を確定 →
+          「未翻訳をすべて翻訳」で残りを一括翻訳。用語・固有名詞が最初から統一されます。
+        </div>
+      ) : null}
 
       <div className="writer-shell">
         <aside className="panel">
@@ -578,6 +649,27 @@ export default function WriterPage() {
             ) : null}
           </div>
           <div className="panel-body dense">
+            {isTranslation && trProgress ? (
+              <div className="runtime-gauge">
+                <div className="runtime-gauge-head">
+                  <strong>翻訳進捗</strong>
+                  <span>
+                    {trProgress.translated} / {trProgress.total} セグメント
+                    {trProgress.total > 0
+                      ? `（${Math.round((trProgress.translated / trProgress.total) * 100)}%）`
+                      : ""}
+                  </span>
+                </div>
+                {trProgress.total > 0 ? (
+                  <div className="runtime-bar">
+                    <div
+                      className="runtime-bar-fill"
+                      style={{ width: `${(trProgress.translated / trProgress.total) * 100}%` }}
+                    />
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             {isScreenplay ? (
               <div className="runtime-gauge">
                 <div className="runtime-gauge-head">
@@ -610,17 +702,43 @@ export default function WriterPage() {
                     {isScreenplay && chapterMinutes > 0 ? (
                       <span className="chapter-minutes">{Math.round(chapterMinutes)}分</span>
                     ) : null}
-                    <button
-                      className="chapter-add-btn"
-                      type="button"
-                      title="この章に小見出しを追加"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleAddSection(c.id);
-                      }}
-                    >
-                      ＋
-                    </button>
+                    {isTranslation ? (
+                      (() => {
+                        const pc = trProgress?.perChapter.get(c.id);
+                        if (!pc) return null;
+                        return (
+                          <>
+                            <span className="chapter-minutes">{pc.done}/{pc.total}</span>
+                            {pc.done < pc.total ? (
+                              <button
+                                className="chapter-add-btn"
+                                type="button"
+                                title="この章の未翻訳セグメントをすべて翻訳"
+                                disabled={batch?.running || loading}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleBatchTranslate(c.id);
+                                }}
+                              >
+                                ▶
+                              </button>
+                            ) : null}
+                          </>
+                        );
+                      })()
+                    ) : (
+                      <button
+                        className="chapter-add-btn"
+                        type="button"
+                        title="この章に小見出しを追加"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleAddSection(c.id);
+                        }}
+                      >
+                        ＋
+                      </button>
+                    )}
                   </div>
                   <ul className="section-list">
                     {(c.sections ?? []).length === 0 ? (
@@ -687,7 +805,7 @@ export default function WriterPage() {
                       <button
                         className="btn"
                         onClick={() => handleGenerate(true)}
-                        disabled={loading}
+                        disabled={loading || batch?.running}
                         type="button"
                       >
                         {loading ? <span className="spinner" /> : null}
@@ -697,7 +815,7 @@ export default function WriterPage() {
                       <button
                         className="btn primary"
                         onClick={() => handleGenerate(false)}
-                        disabled={loading}
+                        disabled={loading || batch?.running}
                         type="button"
                       >
                         {loading ? <span className="spinner" /> : null}

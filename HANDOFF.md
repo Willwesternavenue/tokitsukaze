@@ -103,6 +103,14 @@ agentToggles / sectionAgentReports`。
   `/writer` の「変更差分」タブで自前LCS Diff（`src/lib/diff.ts`）でGitHub風に比較できる
 - 対訳Word出力: `exportBilingualDocx`（原文/訳文の2列テーブル）
 - 言語は現状 日⇄英（`LangCode`）。追加時は types.ts の `LangCode` と genreConfig の `LANGUAGE_OPTIONS` に足す
+- **原文消失ガード**: sourceText は selectedOutline にしか無いため、`storage.ts` の
+  `preserveSourceText` が selectOutline / replaceSelectedOutline で旧構成から原文を引き継ぐ。
+  UI側も翻訳モードでは /outline 表示専用・/outline/refine 無効・小見出しのAI修正非表示
+- **一括翻訳**: /writer「未翻訳をすべて翻訳」＋章ごとの▶ボタン（順次実行・失敗スキップ・中断・
+  再実行で再開）。共通ヘルパは `src/lib/translationClient.ts`（`generateSectionDraft` を
+  /writer と /terms が共用）。左ペインに翻訳進捗ゲージ
+- **/terms の品質運用**: 決定論的QAスキャン（数値転記・段落数・文字数比率）、
+  用語の適用チェック（確定訳語が未適用のセグメント検出→一括再翻訳）、対訳表のCSV入出力
 
 ## 画面一覧
 
