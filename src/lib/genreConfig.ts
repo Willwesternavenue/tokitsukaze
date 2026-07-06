@@ -211,6 +211,7 @@ export const screenplayConfig: GenreConfig = {
     },
   },
   knowledge: [
+    { href: "/board", label: "シーンボード・香盤表" },
     { href: "/characters", label: "登場人物" },
     { href: "/relations", label: "人物相関図" },
     { href: "/bible", label: "設定・ロケーション" },

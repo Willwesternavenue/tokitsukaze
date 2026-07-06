@@ -30,6 +30,8 @@ import type { SectionsWorkflowResult } from "@/workflows/sections";
 import { buildScreenplayExtraContext, getGenreConfig } from "@/lib/genreConfig";
 import { diffLines, diffStats } from "@/lib/diff";
 import { generateSectionDraft, listUntranslated } from "@/lib/translationClient";
+import { buildFountain, measureRuntime } from "@/lib/screenplay";
+import { saveAs } from "file-saver";
 
 type Selected = { chapter: Chapter; section: Section } | null;
 
@@ -107,6 +109,16 @@ export default function WriterPage() {
         0,
       ),
     );
+  }, [isScreenplay, project]);
+
+  // 脚本: 執筆済み本文からの実測尺（セリフ≈320字/分・ト書き≈450字/分の機械換算）
+  const measuredMinutes = useMemo(() => {
+    if (!isScreenplay || !project) return 0;
+    const total = project.generatedSections.reduce(
+      (sum, d) => sum + (d.body ? measureRuntime(d.body).estimatedMinutes : 0),
+      0,
+    );
+    return Math.round(total * 10) / 10;
   }, [isScreenplay, project]);
 
   const draftMap = useMemo(() => {
@@ -586,6 +598,20 @@ export default function WriterPage() {
               対訳Wordを出力
             </button>
           ) : null}
+          {isScreenplay ? (
+            <button
+              className="btn"
+              type="button"
+              title="Fountain形式（Final Draft / Highland 等の業界ツールで読み込み可能）"
+              onClick={() => {
+                if (!project) return;
+                const blob = new Blob([buildFountain(project)], { type: "text/plain;charset=utf-8" });
+                saveAs(blob, `${project.name}.fountain`);
+              }}
+            >
+              Fountainで出力
+            </button>
+          ) : null}
           <button className="btn" onClick={handleExportAll} disabled={exporting} type="button">
             {exporting ? <span className="spinner" /> : null}
             {isTranslation ? "訳文Wordを出力" : "全体Wordを出力"}
@@ -677,6 +703,7 @@ export default function WriterPage() {
                   <span className={totalMinutes > targetMinutes ? "runtime-over" : ""}>
                     {totalMinutes > 0 ? `${totalMinutes}分` : "未設定"}
                     {targetMinutes > 0 ? ` / 目標 ${targetMinutes}分` : ""}
+                    {measuredMinutes > 0 ? `（実測 ${measuredMinutes}分）` : ""}
                   </span>
                 </div>
                 {targetMinutes > 0 && totalMinutes > 0 ? (

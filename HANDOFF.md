@@ -88,6 +88,20 @@ agentToggles / sectionAgentReports`。
 共通レビュアー: 校正 / 文体守護 / 整合性 / 読者体験（翻訳書では整合性・読者体験はスキップ）。
 参照ライブラリ選択時（全ジャンル）: 重複チェック / 一貫性チェック（過去作）。
 
+### 脚本モードのプロ向け機能（2026-07-07 追加）
+
+`src/lib/screenplay.ts` にすべて決定論的（AI不使用）な解析・変換を集約:
+- **本文パーサ** `parseScreenplayBody`: 柱（○始まり）/ ト書き（全角空白始まり）/ 話者行＋「」行を分類。
+  実測尺・キャラ分析・Fountain出力の共通基盤
+- **/board シーンボード・香盤表**（脚本のみ・ナレッジから）: シーンカード俯瞰＋章内並べ替え（↑↓、
+  `moveSectionInChapter`）＋キャラ/ロケ/INT-EXT/時間帯フィルタ、作品サマリ（INT/EXT・昼夜・ロケ数・尺）、
+  **香盤表CSV**（`buildBreakdownCsv`）、**キャラ出番・台詞バランス**（出番数・セリフ行/字数・台詞シェア・
+  出番の空白区間警告・話者の未登録検出）
+- **Fountainエクスポート** `buildFountain`（/writer と /board）: Final Draft / Highland 等に読み込める。
+  日本語話者は @名前 の強制キャラクター記法。未執筆シーンは `= 概要` のシノプシス
+- **実測尺** `measureRuntime`: セリフ≈320字/分＋ト書き≈450字/分で本文から換算。/writer ゲージに
+  「（実測 n分）」、/board カードに想定尺との乖離バッジ（±40%=warn、2倍/半分=error。尺チェックエージェントと同閾値）
+
 ### 翻訳書モードの特記事項（論文モードへの布石）
 
 - 構成はAIで作らない: 原文取り込み（`/api/extract-source`）→ クライアント側で章分割
@@ -121,7 +135,7 @@ agentToggles / sectionAgentReports`。
 - `/review` 診断集約ビュー
 - `/staff` AIスタッフ（旧プロンプト管理。`/prompts` はここへ redirect）
 - `/settings` プロジェクト設定 + JSON入出力 + ロードマップ
-- ナレッジ: `/memory` `/characters` `/relations` `/bible` `/references` `/seo` `/terms` `/library`
+- ナレッジ: `/memory` `/characters` `/relations` `/bible` `/references` `/seo` `/terms` `/board` `/library`
 
 ## 最近の実装（新しい順）
 

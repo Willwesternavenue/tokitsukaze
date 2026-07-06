@@ -1583,3 +1583,117 @@ mark.diff-char-add {
     display: none;
   }
 }
+
+/* ===== 脚本モード: シーンボード・キャラ分析 ===== */
+
+.scene-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+}
+.scene-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-shadow: var(--shadow);
+}
+.scene-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.scene-card-slug {
+  flex: 1;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.scene-card-move {
+  display: flex;
+  gap: 2px;
+}
+.scene-card-move button {
+  border: 1px solid var(--border);
+  background: var(--panel-alt);
+  border-radius: var(--radius);
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px 6px;
+  cursor: pointer;
+  color: var(--text-soft);
+}
+.scene-card-move button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.scene-card-title {
+  font-size: 12px;
+  font-weight: 600;
+}
+.scene-card-purpose {
+  font-size: 11px;
+  color: var(--text-soft);
+  line-height: 1.5;
+}
+.scene-card-chars {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.scene-card-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 4px;
+  border-top: 1px dashed var(--border);
+}
+
+.char-stat-table {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.char-stat-row {
+  display: grid;
+  grid-template-columns: 1.4fr 0.8fr 1.2fr 1.2fr 1.4fr;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  padding: 4px 2px;
+  border-bottom: 1px dashed var(--border);
+}
+.char-stat-row.char-stat-head {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+.share-bar {
+  display: inline-block;
+  width: 72px;
+  height: 8px;
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-right: 6px;
+  vertical-align: middle;
+  overflow: hidden;
+}
+.share-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+@media (max-width: 960px) {
+  .char-stat-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .char-stat-row.char-stat-head {
+    display: none;
+  }
+}
