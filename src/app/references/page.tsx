@@ -26,13 +26,13 @@ export default function ReferencesPage() {
     );
   }
 
-  if (project.genre !== "business" && project.genre !== "news") {
+  if (project.genre !== "business" && project.genre !== "news" && project.genre !== "paper") {
     return (
       <>
         <div className="page-header">
           <div>
             <h1>参考文献・用語集</h1>
-            <p className="subtitle">この画面はビジネス書・ニュース記事モードのプロジェクトでのみ使えます。</p>
+            <p className="subtitle">この画面はビジネス書・ニュース記事・論文モードのプロジェクトでのみ使えます。</p>
           </div>
         </div>
         <div className="empty-state">
@@ -46,6 +46,7 @@ export default function ReferencesPage() {
   }
 
   const isNews = project.genre === "news";
+  const isPaper = project.genre === "paper";
 
   const references = project.references ?? [];
   const glossary = project.glossary ?? [];
@@ -68,7 +69,9 @@ export default function ReferencesPage() {
           <p className="subtitle">
             {isNews
               ? "登録した取材源・出典は、記事執筆と事実確認エージェントに自動で渡されます。"
-              : "登録した文献と用語は、本文執筆と出典チェックエージェントに自動で渡されます。"}
+              : isPaper
+                ? "登録した文献と用語は、本文執筆と出典チェックエージェントに自動で渡されます。登録した文献だけが本文の引用マーカー〔著者, 年〕に使えます（未登録の文献は〔要出典〕になります）。"
+                : "登録した文献と用語は、本文執筆と出典チェックエージェントに自動で渡されます。"}
           </p>
         </div>
       </div>

@@ -563,24 +563,24 @@ export function buildScreenplayExtraContext(p: {
       `想定読者: ${m.audience || "（未設定）"}`
     );
   }
-  if (p.genre === "paper" && p.paperMeta) {
+  if (p.genre === "paper") {
     const m = p.paperMeta;
     const structureNote =
-      m.paperType === "ai-cs"
+      m?.paperType === "ai-cs"
         ? "構成の流儀: AI・情報系（序論→関連研究→提案手法→実験・評価→考察→結論）を基本とする"
-        : m.paperType === "review"
+        : m?.paperType === "review"
           ? "構成の流儀: 総説・レビュー（先行研究の整理・統合）を基本とする"
-          : m.paperType === "humanities"
+          : m?.paperType === "humanities"
             ? "構成の流儀: 人文社会・章立て（問題設定→各論→結論）を基本とする"
             : "構成の流儀: IMRaD（序論→方法→結果→考察）を基本とする";
     return (
       "【論文仕様】\n" +
-      `論文種別: ${paperTypeLabel(m.paperType)}\n` +
-      `分野: ${m.field || "（未設定）"}\n` +
-      `リサーチクエスチョン・仮説: ${m.researchQuestion || "（未設定）"}\n` +
-      `主張したい貢献・新規性: ${m.contributions || "（未設定）"}\n` +
-      `想定投稿先・読者: ${m.venue || "（未設定）"}\n` +
-      (m.keywords ? `キーワード: ${m.keywords}\n` : "") +
+      `論文種別: ${paperTypeLabel(m?.paperType)}\n` +
+      `分野: ${m?.field || "（未設定）"}\n` +
+      `リサーチクエスチョン・仮説: ${m?.researchQuestion || "（未設定）"}\n` +
+      `主張したい貢献・新規性: ${m?.contributions || "（未設定）"}\n` +
+      `想定投稿先・読者: ${m?.venue || "（未設定）"}\n` +
+      (m?.keywords ? `キーワード: ${m.keywords}\n` : "") +
       structureNote
     );
   }

@@ -63,8 +63,8 @@
 
 ### 4. データ（`src/lib/types.ts` の `Project`）
 localStorage に Project 配列。ジャンル別フィールドは optional（後方互換は `mergeDefaults` が補完）:
-`genre / characters / storyBible / references / glossary / screenplayMeta / blogMeta / referenceWorkIds /
-agentToggles / sectionAgentReports`。
+`genre / characters / storyBible / references / glossary / screenplayMeta / blogMeta / newsMeta /
+translationMeta / paperMeta / referenceWorkIds / agentToggles / sectionAgentReports`。
 - 参照ライブラリ本体は **グローバル** localStorage（`akikaze:library:v1`）。プロジェクトは `referenceWorkIds` で参照
 - プロンプトも **グローバル**（`kikigaki:prompts:v1`）
 

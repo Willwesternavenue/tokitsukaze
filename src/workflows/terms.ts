@@ -9,7 +9,7 @@ import { runAiStep } from "./shared";
 /**
  * 翻訳書モード: 翻訳済みセグメントの原文・訳文ペアから対訳表の候補を抽出する。
  * 抽出結果は status:"candidate" で返し、/terms 画面で人が confirmed に昇格させる。
- * （論文モードでも同じ仕組みを流用する想定）
+ * （論文の翻訳も翻訳書モード workType="paper" でこの仕組みに乗る）
  */
 
 export type TermsWorkflowInput = {

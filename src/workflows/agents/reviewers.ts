@@ -196,6 +196,11 @@ const LOGIC_CHECK: AgentDef = {
     outlineSummary: ctx.project.selectedOutline
       ? `${ctx.project.selectedOutline.title}：${ctx.project.selectedOutline.concept}`
       : "",
+    genreNote:
+      ctx.project.genre === "paper"
+        ? "【論文モードの補足】これは学術論文である。以下の論文仕様に照らし、リサーチクエスチョンと主張・根拠の対応、断定と示唆の書き分けを審査すること。\n" +
+          serializePaperMeta(ctx)
+        : "",
   }),
 };
 
