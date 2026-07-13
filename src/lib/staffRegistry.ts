@@ -29,6 +29,8 @@ export type StaffMeta = {
   runsWhen: string;
   /** "common" = 全ジャンル / 配列 = 対象ジャンル限定 */
   genres: "common" | Genre[];
+  /** ジャンル別の表示名の上書き（例: fact-check は論文では「校閲・本文内整合」）。内部キーは不変 */
+  labelOverrides?: Partial<Record<Genre, string>>;
   /** 自動レビュアーのみ。トグル対象 */
   agentKey?: AgentKey;
 };
@@ -126,6 +128,25 @@ export const staffRegistry: StaffMeta[] = [
     genres: ["news"],
   },
   {
+    promptId: "prompt-outline-paper",
+    staffLabel: "構成案プランナー（論文）",
+    group: "planning",
+    kind: "staff",
+    description:
+      "IMRaD・実証／総説・レビュー／人文社会・章立ての3方向で論文構成を提案します。論文種別と整合する案を第1案にし、各章に役割タグを付けます。",
+    runsWhen: "「章立て案を生成する」実行時（論文モード）",
+    genres: ["paper"],
+  },
+  {
+    promptId: "prompt-sections-paper",
+    staffLabel: "節構成担当（論文）",
+    group: "planning",
+    kind: "staff",
+    description: "各章の役割タグ（序論・方法・結果・考察等）に応じた節を展開します。",
+    runsWhen: "構成案の選択時・節再生成時（論文モード）",
+    genres: ["paper"],
+  },
+  {
     promptId: "prompt-terms-extract",
     staffLabel: "用語アナリスト（翻訳）",
     group: "planning",
@@ -221,6 +242,16 @@ export const staffRegistry: StaffMeta[] = [
     genres: ["news"],
   },
   {
+    promptId: "prompt-draft-paper",
+    staffLabel: "本文ライター（論文）",
+    group: "writing",
+    kind: "staff",
+    description:
+      "学術文体（である調）・主張と根拠の対応・引用の安全ルール（参考文献にない文献は〔要出典〕、架空文献の禁止）で本文を執筆します。",
+    runsWhen: "「本文を生成」実行時（論文モード）",
+    genres: ["paper"],
+  },
+  {
     promptId: "prompt-draft-translation",
     staffLabel: "翻訳者",
     group: "writing",
@@ -287,9 +318,10 @@ export const staffRegistry: StaffMeta[] = [
     group: "review",
     kind: "staff",
     description:
-      "本文中の事実主張を素材・一般知識と照合し、誤り・時代考証の違和感・要出典を検出します。実話ベースの原稿に必須。",
-    runsWhen: "本文生成後に自動実行（聞き書き・ビジネス書・ブログ・ニュース。創作の小説では実行されない）",
-    genres: ["biography", "business", "blog", "news"],
+      "本文中の事実主張を素材・一般知識と照合し、誤り・時代考証の違和感・要出典を検出します。実話ベースの原稿に必須。論文モードでは外部真偽の断定ではなく、本文内の主張・数字・因果関係の不自然さ検出が主目的です。",
+    runsWhen: "本文生成後に自動実行（聞き書き・ビジネス書・ブログ・ニュース・論文。創作の小説では実行されない）",
+    genres: ["biography", "business", "blog", "news", "paper"],
+    labelOverrides: { paper: "校閲・本文内整合" },
     agentKey: "fact-check",
   },
   {
@@ -315,13 +347,24 @@ export const staffRegistry: StaffMeta[] = [
     agentKey: "neutrality-check",
   },
   {
+    promptId: "prompt-agent-peer-review",
+    staffLabel: "簡易査読",
+    group: "review",
+    kind: "staff",
+    description:
+      "問題設定・新規性・方法の妥当性・再現性・主張と証拠の対応・限界・倫理・構成を診断します。論文種別（AI・情報系／実証）に応じた観点を追加します。査読通過を保証するものではありません。",
+    runsWhen: "本文生成後に自動実行（論文モードのみ）",
+    genres: ["paper"],
+    agentKey: "peer-review",
+  },
+  {
     promptId: "prompt-agent-omission",
     staffLabel: "訳抜け・過剰訳チェック",
     group: "review",
     kind: "staff",
     description:
       "原文と訳文を突き合わせ、訳抜け（文・句・修飾・否定の欠落）、原文にない加筆、数値・固有名詞の転記ミスを検出します。",
-    runsWhen: "翻訳生成後に自動実行（翻訳書モード。論文モードでも流用予定）",
+    runsWhen: "翻訳生成後に自動実行（翻訳書モード）",
     genres: ["translation"],
     agentKey: "omission-check",
   },
@@ -332,7 +375,7 @@ export const staffRegistry: StaffMeta[] = [
     kind: "staff",
     description:
       "対訳表と突き合わせ、確定訳語と異なる訳・同一原語の訳し分け（意図しないもの）を検出します。",
-    runsWhen: "翻訳生成後に自動実行（翻訳書モード。論文モードでも流用予定）",
+    runsWhen: "翻訳生成後に自動実行（翻訳書モード）",
     genres: ["translation"],
     agentKey: "terminology-check",
   },
@@ -353,8 +396,8 @@ export const staffRegistry: StaffMeta[] = [
     group: "review",
     kind: "staff",
     description: "主張と根拠の対応、論理の飛躍、循環論法、過度な一般化を検出します。",
-    runsWhen: "本文生成後に自動実行（ビジネス書モードのみ）",
-    genres: ["business"],
+    runsWhen: "本文生成後に自動実行（ビジネス書・論文モード）",
+    genres: ["business", "paper"],
     agentKey: "logic-check",
   },
   {
@@ -362,9 +405,10 @@ export const staffRegistry: StaffMeta[] = [
     staffLabel: "出典チェック",
     group: "review",
     kind: "staff",
-    description: "出典が必要な主張を検出し、参考文献ナレッジとの紐付け状況を確認します。",
-    runsWhen: "本文生成後に自動実行（ビジネス書モードのみ）",
-    genres: ["business"],
+    description:
+      "出典が必要な主張を検出し、参考文献ナレッジとの紐付け状況を確認します。論文モードでは引用マーカーと参考文献の突き合わせ・〔要出典〕の残存も確認します（文献の実在確認は行いません）。",
+    runsWhen: "本文生成後に自動実行（ビジネス書・論文モード）",
+    genres: ["business", "paper"],
     agentKey: "citation-check",
   },
   {
@@ -459,17 +503,11 @@ export const plannedRiskStaff: { label: string; genres: string }[] = [
   { label: "プライバシーリスク", genres: "小説（実話ベース）" },
   { label: "名誉毀損リスク", genres: "小説（実話ベース）" },
   { label: "手順検証", genres: "実用書" },
-  { label: "簡易査読", genres: "論文" },
 ];
 
 /** 検討中・開発予定のモード。設定画面などのロードマップ表示用 */
 export const plannedGenres: { label: string; status: "next" | "candidate"; note: string }[] = [
   { label: "実用書", status: "candidate", note: "ハウツー・手順解説。手順の検証エージェントを検討" },
-  {
-    label: "論文",
-    status: "candidate",
-    note: "IMRaD構成・簡易査読。日英翻訳は翻訳書モードのエンジン（翻訳者・訳抜け/用語統一チェック・対訳表）を流用予定",
-  },
 ];
 
 export function staffForGenre(genre: Genre): StaffMeta[] {
@@ -482,8 +520,10 @@ export function findStaffByPromptId(promptId: string): StaffMeta | undefined {
   return staffRegistry.find((s) => s.promptId === promptId);
 }
 
-/** AgentKey → 表示ラベル（レビュー画面などで使用） */
-export function agentLabel(agentKey: string): string {
+/** AgentKey → 表示ラベル（レビュー画面などで使用）。genre を渡すとジャンル別の表示名上書きが効く */
+export function agentLabel(agentKey: string, genre?: Genre): string {
   const meta = staffRegistry.find((s) => s.agentKey === agentKey);
-  return meta?.staffLabel ?? agentKey;
+  if (!meta) return agentKey;
+  if (genre && meta.labelOverrides?.[genre]) return meta.labelOverrides[genre]!;
+  return meta.staffLabel;
 }
