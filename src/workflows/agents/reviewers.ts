@@ -173,6 +173,10 @@ const FACT_CHECK: AgentDef = {
     body: ctx.draft.body,
     interviewNotes: (ctx.project.interviewNotes ?? "").slice(0, 8000),
     writingMemory: JSON.stringify(ctx.project.writingMemory ?? {}, null, 2),
+    genreNote:
+      ctx.project.genre === "paper"
+        ? "【論文モードの注意】外部知識との真偽の断定ではなく、本文内の主張・数字・因果関係の不自然さ・矛盾の検出を主目的とすること（素材との照合が主、一般知識は従）。"
+        : "",
   }),
 };
 
@@ -220,6 +224,10 @@ const CITATION_CHECK: AgentDef = {
     body: ctx.draft.body,
     references: serializeReferences(ctx),
     glossary: serializeGlossary(ctx),
+    genreNote:
+      ctx.project.genre === "paper"
+        ? '【論文モードの追加確認】(1) 本文中の引用マーカー〔著者, 年〕が上の参考文献リストに存在するか突き合わせ、存在しない引用は severity="error" で指摘する。(2) 〔要出典〕が残っていれば出典の追加が必要として指摘する。(3) 文献の実在確認・外部DBとの照合は行わない。'
+        : "",
   }),
 };
 
@@ -306,7 +314,7 @@ const SEO_CHECK: AgentDef = {
 
 // ===== ニュース用: 見出し・リード整合チェック / 中立性・両論チェック =====
 
-import { newsTypeLabel } from "@/lib/genreConfig";
+import { newsTypeLabel, paperTypeLabel } from "@/lib/genreConfig";
 
 function serializeNewsMeta(ctx: AgentContext): string {
   const m = ctx.project.newsMeta;
@@ -344,8 +352,39 @@ const NEUTRALITY_CHECK: AgentDef = {
   }),
 };
 
+// ===== 論文用: 簡易査読 =====
+
+function serializePaperMeta(ctx: AgentContext): string {
+  const m = ctx.project.paperMeta;
+  if (!m) return "（論文仕様なし）";
+  return [
+    `論文種別: ${paperTypeLabel(m.paperType)}`,
+    `分野: ${m.field || "未設定"}`,
+    `リサーチクエスチョン・仮説: ${m.researchQuestion || "未設定"}`,
+    `主張したい貢献・新規性: ${m.contributions || "未設定"}`,
+    `想定投稿先・読者: ${m.venue || "未設定"}`,
+    m.keywords ? `キーワード: ${m.keywords}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+const PEER_REVIEW: AgentDef = {
+  key: "peer-review",
+  label: "簡易査読",
+  promptId: "prompt-agent-peer-review",
+  buildVars: (ctx) => ({
+    body: ctx.draft.body,
+    chapterNumber: String(ctx.chapter?.chapterNumber ?? 0),
+    chapterTitle: ctx.chapter?.title ?? ctx.draft.chapterTitle,
+    sectionTitle: ctx.section?.title ?? ctx.draft.sectionTitle,
+    paperContext: serializePaperMeta(ctx),
+    references: serializeReferences(ctx),
+  }),
+};
+
 // ===== 翻訳書用: 訳抜け / 用語統一 / 表記揺れ =====
-// （論文モードの日英翻訳でも流用予定。sourceText は Section.sourceText から取る）
+// （sourceText は Section.sourceText から取る）
 
 function serializeTermPairs(ctx: AgentContext): string {
   const terms = ctx.project.termPairs ?? [];
@@ -540,7 +579,10 @@ export async function factCheckStep(
   runId: string,
 ): Promise<AgentReportSummary> {
   "use step";
-  return runReviewer(FACT_CHECK, ctx, runId);
+  // 論文モード: 「事実確認」が外部真偽の保証と誤解されないよう表示名を差し替える（内部キーは不変）
+  const def =
+    ctx.project.genre === "paper" ? { ...FACT_CHECK, label: "校閲・本文内整合" } : FACT_CHECK;
+  return runReviewer(def, ctx, runId);
 }
 
 export async function logicCheckStep(
@@ -623,7 +665,17 @@ export async function neutralityCheckStep(
   return runReviewer(NEUTRALITY_CHECK, ctx, runId);
 }
 
-// ===== 翻訳書専用（論文モードでも流用予定） =====
+// ===== 論文専用 =====
+
+export async function peerReviewStep(
+  ctx: AgentContext,
+  runId: string,
+): Promise<AgentReportSummary> {
+  "use step";
+  return runReviewer(PEER_REVIEW, ctx, runId);
+}
+
+// ===== 翻訳書専用 =====
 
 export async function omissionCheckStep(
   ctx: AgentContext,
