@@ -24,6 +24,8 @@ type AgentDef = {
   label: string;
   promptId: string;
   buildVars: (ctx: AgentContext) => Record<string, string>;
+  /** 出力上限。簡易査読のように構造化出力が長いエージェントのみ上書きする（既定 2000） */
+  maxTokens?: number;
 };
 
 type AgentContext = {
@@ -59,7 +61,7 @@ async function runReviewer(
           { role: "system", content: tpl.systemPrompt },
           { role: "user", content: userPrompt + formatNote },
         ],
-        maxTokens: 2000,
+        maxTokens: def.maxTokens ?? 2000,
         maxAttempts: 1, // reviewer は 1 発勝負。失敗しても本文生成は成功扱いにする
       },
       (raw) => {
@@ -373,6 +375,8 @@ const PEER_REVIEW: AgentDef = {
   key: "peer-review",
   label: "簡易査読",
   promptId: "prompt-agent-peer-review",
+  // 総評＋指摘＋良い点＋投稿前チェックの構造化出力は共通の 2000 では途中で切れて parse 失敗する
+  maxTokens: 3500,
   buildVars: (ctx) => ({
     body: ctx.draft.body,
     chapterNumber: String(ctx.chapter?.chapterNumber ?? 0),
