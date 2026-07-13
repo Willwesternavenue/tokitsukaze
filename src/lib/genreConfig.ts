@@ -381,6 +381,55 @@ export const translationConfig: GenreConfig = {
   },
 };
 
+export const paperConfig: GenreConfig = {
+  genre: "paper",
+  label: "論文",
+  stages: {
+    material: {
+      navLabel: "素材",
+      pageTitle: "研究素材",
+      description: "研究メモ・データ・実験結果・先行研究の要点を整理し、論文構成案を生成します。",
+    },
+    structure: {
+      navLabel: "構成",
+      pageTitle: "論文構成",
+      description: "IMRaD・実証／総説・レビュー／人文社会・章立ての3案から方向性を選びます。",
+    },
+    writing: {
+      navLabel: "執筆",
+      pageTitle: "執筆",
+      description: "節単位で、主張と根拠の対応・引用の規律を守った本文を生成します。",
+    },
+    review: {
+      navLabel: "レビュー",
+      pageTitle: "査読レビュー",
+      description: "簡易査読・論理・出典・校閲の診断を集約して確認します。",
+    },
+  },
+  knowledge: [
+    { href: "/references", label: "参考文献・用語集" },
+    { href: "/memory", label: "執筆メモリ" },
+    { href: "/library", label: "参照ライブラリ" },
+  ],
+  material: {
+    panelTitle: "研究素材",
+    placeholder:
+      "研究の背景、リサーチクエスチョン、方法のメモ、データ・実験結果、先行研究の要点などを自由に入力してください。",
+    help: "研究素材と論文仕様（種別・分野・RQ・貢献）をもとに、論文構成と本文を生成します。参考文献をナレッジに登録すると、引用と出典チェックに使われます。※本モードは執筆支援であり、査読通過や学術的妥当性を保証するものではありません。",
+    subjectLabel: "著者名／所属",
+  },
+  pipelinePrompts: {
+    outline: "prompt-outline-paper",
+    sections: "prompt-sections-paper",
+    draft: "prompt-draft-paper",
+  },
+  outlineTypeLabels: {
+    chronological: "IMRaD・実証型",
+    thematic: "総説・レビュー型",
+    narrative: "人文社会・章立て型",
+  },
+};
+
 const registry: Record<Genre, GenreConfig> = {
   biography: biographyConfig,
   novel: novelConfig,
@@ -389,6 +438,7 @@ const registry: Record<Genre, GenreConfig> = {
   blog: blogConfig,
   news: newsConfig,
   translation: translationConfig,
+  paper: paperConfig,
 };
 
 // ===== 脚本: メディア種別のプリセット =====
@@ -422,6 +472,23 @@ export const NEWS_TYPE_OPTIONS: {
 
 export function newsTypeLabel(v: string | undefined): string {
   return NEWS_TYPE_OPTIONS.find((o) => o.value === v)?.label ?? "ストレートニュース";
+}
+
+// ===== 論文: 論文種別のプリセット =====
+
+/** 論文種別。厳密な分類ではなく構成テンプレート分岐のための実用分類（設計書 §2） */
+export const PAPER_TYPE_OPTIONS: {
+  value: import("./types").PaperType;
+  label: string;
+}[] = [
+  { value: "empirical", label: "原著（実証・IMRaD）" },
+  { value: "ai-cs", label: "AI・情報系" },
+  { value: "review", label: "総説・レビュー" },
+  { value: "humanities", label: "人文社会" },
+];
+
+export function paperTypeLabel(v: string | undefined): string {
+  return PAPER_TYPE_OPTIONS.find((o) => o.value === v)?.label ?? "原著（実証・IMRaD）";
 }
 
 // ===== 翻訳書: 言語・原文種別のプリセット =====
@@ -471,6 +538,7 @@ export function buildScreenplayExtraContext(p: {
     angle?: string;
     audience?: string;
   };
+  paperMeta?: import("./types").PaperMeta;
 }): string {
   if (p.genre === "screenplay" && p.screenplayMeta) {
     return `【作品仕様】\nメディア種別: ${mediaTypeLabel(p.screenplayMeta.mediaType)}\n目標尺: ${p.screenplayMeta.targetRuntimeMinutes}分`;
@@ -493,6 +561,27 @@ export function buildScreenplayExtraContext(p: {
       `記事種別: ${newsTypeLabel(m.newsType)}\n` +
       `切り口・アングル: ${m.angle || "（未設定）"}\n` +
       `想定読者: ${m.audience || "（未設定）"}`
+    );
+  }
+  if (p.genre === "paper" && p.paperMeta) {
+    const m = p.paperMeta;
+    const structureNote =
+      m.paperType === "ai-cs"
+        ? "構成の流儀: AI・情報系（序論→関連研究→提案手法→実験・評価→考察→結論）を基本とする"
+        : m.paperType === "review"
+          ? "構成の流儀: 総説・レビュー（先行研究の整理・統合）を基本とする"
+          : m.paperType === "humanities"
+            ? "構成の流儀: 人文社会・章立て（問題設定→各論→結論）を基本とする"
+            : "構成の流儀: IMRaD（序論→方法→結果→考察）を基本とする";
+    return (
+      "【論文仕様】\n" +
+      `論文種別: ${paperTypeLabel(m.paperType)}\n` +
+      `分野: ${m.field || "（未設定）"}\n` +
+      `リサーチクエスチョン・仮説: ${m.researchQuestion || "（未設定）"}\n` +
+      `主張したい貢献・新規性: ${m.contributions || "（未設定）"}\n` +
+      `想定投稿先・読者: ${m.venue || "（未設定）"}\n` +
+      (m.keywords ? `キーワード: ${m.keywords}\n` : "") +
+      structureNote
     );
   }
   return "";

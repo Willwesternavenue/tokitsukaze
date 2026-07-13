@@ -129,6 +129,8 @@ export type Project = {
   blogMeta?: BlogMeta;
   // ===== ニュース記事 =====
   newsMeta?: NewsMeta;
+  // ===== 論文 =====
+  paperMeta?: PaperMeta;
   // ===== 翻訳書 =====
   translationMeta?: TranslationMeta;
   /** 翻訳書: 対訳表（用語の確定訳語と揺れ表記）。論文モードでも流用予定 */
@@ -176,7 +178,9 @@ export type AgentKey =
   // ニュース記事専用
   | "headline-lead-check"
   | "neutrality-check"
-  // 翻訳書専用（論文モードでも流用予定）
+  // 論文専用
+  | "peer-review"
+  // 翻訳書専用
   | "omission-check"
   | "terminology-check"
   | "orthography-check"
@@ -212,7 +216,8 @@ export type Genre =
   | "screenplay"
   | "blog"
   | "news"
-  | "translation";
+  | "translation"
+  | "paper";
 
 // ===== ブログ記事モード =====
 
@@ -234,6 +239,25 @@ export type NewsMeta = {
   angle: string;         // 切り口・アングル（この記事は何のニュースか）
   audience: string;      // 想定読者
   headlineDraft: string; // 見出し案（AIが提案・編集可）
+};
+
+// ===== 論文モード =====
+
+/**
+ * 論文の種類。厳密な分類体系ではなく、構成テンプレート分岐のための実用分類
+ * （形式軸と分野軸が混在していることは承知の上の MVP 4択）。
+ * 将来、方法論軸（実証/提案/調査/理論/実装報告）が必要になったら paperType を
+ * 作り直さず、optional な methodology フィールドを PaperMeta に追加して直交させる。
+ */
+export type PaperType = "empirical" | "ai-cs" | "review" | "humanities";
+
+export type PaperMeta = {
+  paperType: PaperType;      // 構成テンプレート分岐（ai-cs は序論→関連研究→提案手法→実験の流儀）
+  field: string;             // 分野（例: 教育学、自然言語処理）
+  researchQuestion: string;  // リサーチクエスチョン・仮説
+  contributions: string;     // 主張したい貢献・新規性
+  venue: string;             // 想定投稿先・読者（紀要／学会誌／一般向け学術書 等）
+  keywords?: string;         // キーワード（カンマ区切り。任意）
 };
 
 // ===== 翻訳書モード =====
