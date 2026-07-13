@@ -25,6 +25,7 @@ import {
   neutralityCheckStep,
   omissionCheckStep,
   orthographyCheckStep,
+  peerReviewStep,
   proofreaderStep,
   readerExperienceStep,
   repetitionCheckStep,
@@ -35,7 +36,7 @@ import {
   tensionStep,
   terminologyCheckStep,
 } from "./agents/reviewers";
-import { langLabel, mediaTypeLabel, newsTypeLabel, workTypeLabel } from "@/lib/genreConfig";
+import { langLabel, mediaTypeLabel, newsTypeLabel, paperTypeLabel, workTypeLabel } from "@/lib/genreConfig";
 
 export type DraftWorkflowInput = {
   project: Project;
@@ -91,12 +92,13 @@ export async function draftWorkflow(input: DraftWorkflowInput): Promise<DraftWor
       if (enabled("character-voice")) steps.push(characterVoiceStep(ctx, runId));
       if (enabled("tension-checker")) steps.push(tensionStep(ctx, runId));
     }
-    // 実話・実用系 (聞き書き / ビジネス書 / ブログ / ニュース) は校閲 (事実確認) を追加。創作の小説では不要
+    // 実話・実用系 (聞き書き / ビジネス書 / ブログ / ニュース / 論文) は校閲 (事実確認) を追加。創作の小説では不要
     if (
       input.project.genre === "biography" ||
       input.project.genre === "business" ||
       input.project.genre === "blog" ||
-      input.project.genre === "news"
+      input.project.genre === "news" ||
+      input.project.genre === "paper"
     ) {
       if (enabled("fact-check")) steps.push(factCheckStep(ctx, runId));
     }
@@ -109,16 +111,20 @@ export async function draftWorkflow(input: DraftWorkflowInput): Promise<DraftWor
       if (enabled("headline-lead-check")) steps.push(headlineLeadCheckStep(ctx, runId));
       if (enabled("neutrality-check")) steps.push(neutralityCheckStep(ctx, runId));
     }
-    // 翻訳書専任: 訳抜け + 用語統一 + 表記揺れ（論文モードでも流用予定）
+    // 翻訳書専任: 訳抜け + 用語統一 + 表記揺れ（論文の翻訳も workType="paper" でこの規律に乗る）
     if (isTranslation) {
       if (enabled("omission-check")) steps.push(omissionCheckStep(ctx, runId));
       if (enabled("terminology-check")) steps.push(terminologyCheckStep(ctx, runId));
       if (enabled("orthography-check")) steps.push(orthographyCheckStep(ctx, runId));
     }
-    // ビジネス書専任: 論理構成チェック + 出典チェック
-    if (input.project.genre === "business") {
+    // ビジネス書・論文: 論理構成チェック + 出典チェック
+    if (input.project.genre === "business" || input.project.genre === "paper") {
       if (enabled("logic-check")) steps.push(logicCheckStep(ctx, runId));
       if (enabled("citation-check")) steps.push(citationCheckStep(ctx, runId));
+    }
+    // 論文専任: 簡易査読
+    if (input.project.genre === "paper") {
+      if (enabled("peer-review")) steps.push(peerReviewStep(ctx, runId));
     }
     // 脚本専任: フォーマットチェック + 尺・テンポチェック
     if (input.project.genre === "screenplay") {
@@ -197,7 +203,9 @@ async function draftStep(
               ? buildNewsContext(project)
               : project.genre === "translation"
                 ? buildTranslationContext(project)
-                : "";
+                : project.genre === "paper"
+                  ? buildPaperContext(project)
+                  : "";
   // 参照ライブラリ（全ジャンル共通・選択作品があれば）
   const refContext = buildReferenceContext(input.referenceWorks ?? [], project.genre);
   const systemPromptFinal =
@@ -433,8 +441,58 @@ function buildNewsContext(project: Project): string {
   return parts.join("\n\n");
 }
 
+// 論文: 論文仕様・参考文献・用語集を system prompt に注入する。
+// 注入方針（設計書 §5）: PaperMeta は常時全文（短い固定サイズ）、references / glossary は
+// 1行サマリの縮約のみ。原文や長文は入れない
+function buildPaperContext(project: Project): string {
+  const m = project.paperMeta;
+  const refs = project.references ?? [];
+  const terms = project.glossary ?? [];
+  const parts: string[] = ["【論文モード：論文仕様】"];
+  parts.push(
+    [
+      `- 論文種別: ${m ? paperTypeLabel(m.paperType) : "（未設定）"}`,
+      `- 分野: ${m?.field || "（未設定）"}`,
+      `- リサーチクエスチョン・仮説: ${m?.researchQuestion || "（未設定）"}`,
+      `- 主張したい貢献・新規性: ${m?.contributions || "（未設定）"}`,
+      `- 想定投稿先・読者: ${m?.venue || "（未設定）"}`,
+      m?.keywords ? `- キーワード: ${m.keywords}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n"),
+  );
+  if (refs.length > 0) {
+    parts.push("## 参考文献（登録済み。引用マーカー〔著者, 年〕はこのリストの文献のみに使うこと）");
+    parts.push(
+      refs
+        .map(
+          (r) =>
+            `- ${r.title}${r.author ? ` / ${r.author}` : ""}${r.source ? `（${r.source}）` : ""}${
+              r.year ? ` ${r.year}` : ""
+            }${r.notes ? ` — ${r.notes}` : ""}`,
+        )
+        .join("\n"),
+    );
+  } else {
+    parts.push(
+      "## 参考文献\n（未登録。引用マーカー〔著者, 年〕は一切使わず、出典が必要な箇所は〔要出典〕とすること）",
+    );
+  }
+  if (terms.length > 0) {
+    parts.push("## 用語集（この定義に従って用語を使うこと）");
+    parts.push(terms.map((t) => `- ${t.term}: ${t.definition}`).join("\n"));
+  }
+  parts.push(
+    "\n【守るべきこと】\n" +
+      "- 引用マーカー〔著者, 年〕は上記の参考文献にある文献のみに使う。無い場合は架空文献を作らず〔要出典〕と書く\n" +
+      "- 素材にない結果・数値を書かない。不確かなものは factCheckPoints に挙げる\n" +
+      "- 用語は用語集の定義と矛盾しない使い方をすること",
+  );
+  return parts.join("\n\n");
+}
+
 // 翻訳書: 対訳表・文体方針・原文種別の規律を system prompt に注入する
-// （論文モード実装時は workType="paper" の規律をそのまま流用する想定）
+// （論文の翻訳も workType="paper" でこの規律に乗る）
 function buildTranslationContext(project: Project): string {
   const meta = project.translationMeta;
   const terms = project.termPairs ?? [];

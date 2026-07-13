@@ -16,6 +16,7 @@ import {
   NEWS_TYPE_OPTIONS,
   LANGUAGE_OPTIONS,
   WORK_TYPE_OPTIONS,
+  PAPER_TYPE_OPTIONS,
 } from "@/lib/genreConfig";
 import type {
   LangCode,
@@ -23,6 +24,8 @@ import type {
   Project,
   ScreenplayMediaType,
   TranslationWorkType,
+  PaperMeta,
+  PaperType,
 } from "@/lib/types";
 import {
   buildTranslationOutline,
@@ -67,6 +70,24 @@ export default function InterviewNotesPage() {
     setProject((prev) => {
       if (!prev) return prev;
       const next = { ...prev, [key]: value };
+      saveProject(next);
+      return next;
+    });
+  }
+
+  function updatePaperField(patch: Partial<PaperMeta>) {
+    setProject((prev) => {
+      if (!prev) return prev;
+      const merged: PaperMeta = {
+        paperType: prev.paperMeta?.paperType ?? "empirical",
+        field: prev.paperMeta?.field ?? "",
+        researchQuestion: prev.paperMeta?.researchQuestion ?? "",
+        contributions: prev.paperMeta?.contributions ?? "",
+        venue: prev.paperMeta?.venue ?? "",
+        keywords: prev.paperMeta?.keywords,
+        ...patch,
+      };
+      const next = { ...prev, paperMeta: merged };
       saveProject(next);
       return next;
     });
@@ -382,6 +403,91 @@ export default function InterviewNotesPage() {
                       })
                     }
                     placeholder="例：地域の中小企業経営者"
+                  />
+                </div>
+              </div>
+            </>
+          ) : null}
+          {project.genre === "paper" ? (
+            <>
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="paper-type">論文種別</label>
+                  <select
+                    id="paper-type"
+                    className="input"
+                    value={project.paperMeta?.paperType ?? "empirical"}
+                    onChange={(e) => updatePaperField({ paperType: e.target.value as PaperType })}
+                  >
+                    {PAPER_TYPE_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                  <p className="help">
+                    種別で構成の流儀が切り替わります（AI・情報系＝序論→関連研究→提案手法→実験）。
+                  </p>
+                </div>
+                <div className="field">
+                  <label htmlFor="paper-field">分野</label>
+                  <input
+                    id="paper-field"
+                    type="text"
+                    className="input"
+                    value={project.paperMeta?.field ?? ""}
+                    onChange={(e) => updatePaperField({ field: e.target.value })}
+                    placeholder="例：教育学 / 自然言語処理"
+                  />
+                </div>
+              </div>
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="paper-rq">リサーチクエスチョン・仮説</label>
+                  <input
+                    id="paper-rq"
+                    type="text"
+                    className="input"
+                    value={project.paperMeta?.researchQuestion ?? ""}
+                    onChange={(e) => updatePaperField({ researchQuestion: e.target.value })}
+                    placeholder="この研究で何を明らかにするか"
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="paper-contrib">主張したい貢献・新規性</label>
+                  <input
+                    id="paper-contrib"
+                    type="text"
+                    className="input"
+                    value={project.paperMeta?.contributions ?? ""}
+                    onChange={(e) => updatePaperField({ contributions: e.target.value })}
+                    placeholder="先行研究に対して何が新しいか"
+                  />
+                </div>
+              </div>
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="paper-venue">想定投稿先・読者</label>
+                  <input
+                    id="paper-venue"
+                    type="text"
+                    className="input"
+                    value={project.paperMeta?.venue ?? ""}
+                    onChange={(e) => updatePaperField({ venue: e.target.value })}
+                    placeholder="例：紀要 / 学会誌 / 一般向け学術書"
+                  />
+                  <p className="help">
+                    投稿先で文体・構成の書き分けが変わります。参考文献は{" "}
+                    <Link href="/references">参考文献・用語集</Link> で登録すると引用と出典チェックに使われます。
+                  </p>
+                </div>
+                <div className="field">
+                  <label htmlFor="paper-keywords">キーワード（任意）</label>
+                  <input
+                    id="paper-keywords"
+                    type="text"
+                    className="input"
+                    value={project.paperMeta?.keywords ?? ""}
+                    onChange={(e) => updatePaperField({ keywords: e.target.value })}
+                    placeholder="例：大規模言語モデル, 教育評価, 自動採点"
                   />
                 </div>
               </div>

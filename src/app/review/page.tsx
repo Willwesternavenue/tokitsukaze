@@ -94,7 +94,7 @@ export default function ReviewPage() {
       for (const r of s.reports) {
         const cur = m.get(r.agent) ?? {
           agent: r.agent,
-          label: r.label || agentLabel(r.agent),
+          label: r.label || agentLabel(r.agent, project?.genre),
           count: 0,
           sections: 0,
           worst: null as Severity,
@@ -107,7 +107,7 @@ export default function ReviewPage() {
       }
     }
     return Array.from(m.values());
-  }, [sections]);
+  }, [sections, project]);
 
   const totalFindings = useMemo(
     () => sections.reduce((sum, s) => sum + s.totalFindings, 0),
@@ -212,7 +212,7 @@ export default function ReviewPage() {
                                   onClick={() => setActiveTab(r.agent)}
                                   title="このエージェントのタブへ"
                                 >
-                                  {r.label || agentLabel(r.agent)}
+                                  {r.label || agentLabel(r.agent, project?.genre)}
                                 </button>
                                 <StatusBadge status={status} current={r.findings.length} prev={prev} parseFailed={r.meta.parseFailed} />
                               </div>
