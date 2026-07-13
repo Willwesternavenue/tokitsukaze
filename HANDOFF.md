@@ -1,6 +1,6 @@
 # アキカゼ出版AI — 引き継ぎドキュメント
 
-最終更新: 2026-07-06
+最終更新: 2026-07-13
 
 ## これは何か
 
@@ -73,7 +73,7 @@ agentToggles / sectionAgentReports`。
 - `src/lib/ai.ts` の `generateJsonWithRetry` が parse 失敗時に最大2回リトライ（temperature 0.2）
 - `src/lib/json.ts` の `safeJsonParse` がコードフェンス除去・JSON断片抽出
 
-## 7ジャンルと専任エージェント
+## 8ジャンルと専任エージェント
 
 | ジャンル | 素材ラベル | 専任ナレッジ | 専任レビュアー |
 |---|---|---|---|
@@ -84,9 +84,11 @@ agentToggles / sectionAgentReports`。
 | blog（ブログ記事） | ネタ・キーワード | キーワード・ペルソナ | 校閲/SEO |
 | news（ニュース記事） | 取材素材・一次情報 | 取材源・出典(/references流用) | 校閲/見出し・リード整合/中立性・両論 |
 | translation（翻訳書） | 原文(docx/pdf/貼付) | 対訳表・用語(/terms) | 訳抜け/用語統一/表記揺れ |
+| paper（論文） | 研究素材 | 参考文献・用語集(/references流用) | 簡易査読/論理構成/出典/校閲・本文内整合 |
 
 共通レビュアー: 校正 / 文体守護 / 整合性 / 読者体験（翻訳書では整合性・読者体験はスキップ）。
 参照ライブラリ選択時（全ジャンル）: 重複チェック / 一貫性チェック（過去作）。
+論文の引用安全ルール: 引用マーカー〔著者, 年〕は references 登録文献のみ。無ければ〔要出典〕（架空文献の生成禁止）。
 
 ### 脚本モードのプロ向け機能（2026-07-07 追加）
 
@@ -102,14 +104,14 @@ agentToggles / sectionAgentReports`。
 - **実測尺** `measureRuntime`: セリフ≈320字/分＋ト書き≈450字/分で本文から換算。/writer ゲージに
   「（実測 n分）」、/board カードに想定尺との乖離バッジ（±40%=warn、2倍/半分=error。尺チェックエージェントと同閾値）
 
-### 翻訳書モードの特記事項（論文モードへの布石）
+### 翻訳書モードの特記事項
 
 - 構成はAIで作らない: 原文取り込み（`/api/extract-source`）→ クライアント側で章分割
   （`src/lib/sourceSplit.ts`、見出し正規表現＋段落境界の決定論的分割）→ OutlineProposal を直接組み立て。
   各セグメントの原文は `Section.sourceText` に保持
 - 翻訳は既存 draftWorkflow に乗る（`prompt-draft-translation` + `buildTranslationContext`。
   対訳表 `Project.termPairs`・文体方針・原文種別 workType=book/paper/fiction/article で規律切替）。
-  **workType="paper" が将来の論文モードの翻訳の入口**
+  **論文の翻訳は workType="paper" でこのエンジンに乗る**（論文モード本体は執筆専念）
 - `/writer` の POST 時は `slimProjectForDraft` で他セグメントの sourceText と bodyHistory を落とす
   （4.5MB body制限とプロンプト肥大の対策）
 - `/terms` = ローカライズ作業台（対訳表CRUD・AI用語抽出 `/api/extract-terms`・用語検索・
@@ -145,14 +147,17 @@ agentToggles / sectionAgentReports`。
 
 ## 最近の実装（新しい順）
 
-0. **ニュース記事モード + 翻訳書モード**（2026-07-06）: news（見出し・リード整合/中立性エージェント、
+0. **論文モード**（2026-07-13）: paper（IMRaD/AI・情報系/総説/人文社会の構成分岐、簡易査読、
+   引用安全ルール、fact-check は「校閲・本文内整合」に表示名切替）。
+   設計書: `docs/superpowers/specs/2026-07-13-paper-mode-design.md`
+1. **ニュース記事モード + 翻訳書モード**（2026-07-06）: news（見出し・リード整合/中立性エージェント、
    newsMeta）と translation（原文取り込み→章分割→翻訳→対訳/Diff/用語/一括置換。上の特記事項参照）。
    設計書: `docs/superpowers/specs/2026-07-06-news-and-translation-modes-design.md`
-1. **小見出しの個別編集**（`10f29f7`）: /writer で小見出しを手動編集/AI修正/追加/削除 → 本文生成
-2. **構成の調整画面**（`935bb72`）: /outline/refine 追加。全体AI改善 + 章ごと修正 + 手動編集
-3. **アキカゼ出版AI 改名 + 参照ライブラリ**（`d2b4753`）: 過去作品を作品カルテ化して踏襲/重複/矛盾チェック
-4. ブログ / 脚本 / ビジネス書モード（`3604e49` / `49f66c5` / `8374d35`）
-5. 人物相関図（`9850f5e`）、ナビ再構成（`979cefd`）、小説モード（`9829780`）、多役化 P2（`05a6814`）、WDK/Neon 基盤 P1（`b37efd2`）
+2. **小見出しの個別編集**（`10f29f7`）: /writer で小見出しを手動編集/AI修正/追加/削除 → 本文生成
+3. **構成の調整画面**（`935bb72`）: /outline/refine 追加。全体AI改善 + 章ごと修正 + 手動編集
+4. **アキカゼ出版AI 改名 + 参照ライブラリ**（`d2b4753`）: 過去作品を作品カルテ化して踏襲/重複/矛盾チェック
+5. ブログ / 脚本 / ビジネス書モード（`3604e49` / `49f66c5` / `8374d35`）
+6. 人物相関図（`9850f5e`）、ナビ再構成（`979cefd`）、小説モード（`9829780`）、多役化 P2（`05a6814`）、WDK/Neon 基盤 P1（`b37efd2`）
 
 ## ストレージ設計判断（既に確定済み）
 
@@ -164,7 +169,6 @@ agentToggles / sectionAgentReports`。
 ## 次にやる候補（ロードマップ）
 
 - **実用書モード**（検討中。手順検証エージェント）
-- **論文モード**（検討中。IMRaD + 簡易査読。翻訳は翻訳書モードのエンジンを流用: workType="paper" + 対訳表 + 訳抜け/用語統一チェック）
 - **全文RAG**（Phase B。Vercel Blob + Neon pgvector。過去作の逐語セリフ矛盾検出など）
 - P6 通しレビュー（`/review` の「全体レビューを実行」は現状 disabled）
 - Neon への参照ライブラリ mirror（別端末同期が要るとき。今は JSON エクスポートで移行）

@@ -133,7 +133,7 @@ export type Project = {
   paperMeta?: PaperMeta;
   // ===== 翻訳書 =====
   translationMeta?: TranslationMeta;
-  /** 翻訳書: 対訳表（用語の確定訳語と揺れ表記）。論文モードでも流用予定 */
+  /** 翻訳書: 対訳表（用語の確定訳語と揺れ表記）。論文の翻訳（workType="paper"）でも同じ対訳表を利用 */
   termPairs?: TermPair[];
   /** 翻訳書: 参照するグローバル対訳表のID（本体はグローバル localStorage） */
   termSetIds?: string[];

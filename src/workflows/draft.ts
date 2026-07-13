@@ -111,7 +111,7 @@ export async function draftWorkflow(input: DraftWorkflowInput): Promise<DraftWor
       if (enabled("headline-lead-check")) steps.push(headlineLeadCheckStep(ctx, runId));
       if (enabled("neutrality-check")) steps.push(neutralityCheckStep(ctx, runId));
     }
-    // 翻訳書専任: 訳抜け + 用語統一 + 表記揺れ（論文モードでも流用予定）
+    // 翻訳書専任: 訳抜け + 用語統一 + 表記揺れ（論文の翻訳も workType="paper" でこの規律に乗る）
     if (isTranslation) {
       if (enabled("omission-check")) steps.push(omissionCheckStep(ctx, runId));
       if (enabled("terminology-check")) steps.push(terminologyCheckStep(ctx, runId));
