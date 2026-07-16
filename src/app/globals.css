@@ -1697,3 +1697,62 @@ mark.diff-char-add {
     display: none;
   }
 }
+
+/* ===== アクセスゲート（合言葉） ===== */
+
+.gate-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--bg);
+}
+.gate-card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  padding: 28px 26px;
+}
+.gate-brand {
+  font-weight: 700;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.gate-title {
+  font-size: 18px;
+  margin: 0 0 8px;
+}
+.gate-help {
+  font-size: 12px;
+  color: var(--text-soft);
+  line-height: 1.7;
+  margin: 0 0 16px;
+}
+
+.gate-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 12px;
+}
+.gate-lock {
+  border: 1px solid var(--border);
+  background: var(--panel-alt);
+  border-radius: var(--radius);
+  font-size: 11px;
+  padding: 3px 8px;
+  cursor: pointer;
+  color: var(--text-soft);
+}
+.gate-lock:hover {
+  background: var(--panel);
+}
