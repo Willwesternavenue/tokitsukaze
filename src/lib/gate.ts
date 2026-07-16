@@ -14,7 +14,7 @@ export type GateRole = "staff" | "guest";
 export const GATE_COOKIE = "gate_session";
 /** バッジ表示用（httpOnlyでない・セキュリティ用途ではない） */
 export const GATE_ROLE_COOKIE = "gate_role";
-export const GATE_MAX_AGE = 60 * 60 * 24 * 30; // 30日
+export const GATE_MAX_AGE = 60 * 60 * 24 * 90; // 90日（合言葉の入力頻度を下げる）
 
 export function gateConfig(): {
   staff: string;
