@@ -192,7 +192,7 @@ export default function StaffPage() {
                   <div key={meta.promptId} className={`staff-row ${enabled ? "" : "disabled"}`}>
                     <div className="staff-row-main">
                       <div className="staff-row-title">
-                        <strong>{meta.staffLabel}</strong>
+                        <strong>{meta.labelOverrides?.[genre] ?? meta.staffLabel}</strong>
                         {genreBadge(meta)}
                         {meta.kind === "rulebook" ? (
                           <span className="badge warn">注入</span>

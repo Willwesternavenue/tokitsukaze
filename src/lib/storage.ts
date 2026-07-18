@@ -106,6 +106,7 @@ function mergeDefaults(p: Project): Project {
     screenplayMeta: (p as any).screenplayMeta ?? undefined,
     blogMeta: (p as any).blogMeta ?? undefined,
     newsMeta: (p as any).newsMeta ?? undefined,
+    paperMeta: (p as any).paperMeta ?? undefined,
     translationMeta: (p as any).translationMeta ?? undefined,
     termPairs: Array.isArray((p as any).termPairs) ? (p as any).termPairs : [],
     termSetIds: Array.isArray((p as any).termSetIds) ? (p as any).termSetIds : [],
@@ -526,6 +527,12 @@ export function updateBlogMeta(meta: import("./types").BlogMeta): Project {
 
 export function updateNewsMeta(meta: import("./types").NewsMeta): Project {
   return updateProject((p) => ({ ...p, newsMeta: meta }));
+}
+
+// ===== 論文 =====
+
+export function updatePaperMeta(meta: import("./types").PaperMeta): Project {
+  return updateProject((p) => ({ ...p, paperMeta: meta }));
 }
 
 // ===== 翻訳書 =====
