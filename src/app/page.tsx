@@ -17,6 +17,7 @@ import {
   LANGUAGE_OPTIONS,
   WORK_TYPE_OPTIONS,
   PAPER_TYPE_OPTIONS,
+  PAPER_STYLE_OPTIONS,
 } from "@/lib/genreConfig";
 import type {
   LangCode,
@@ -266,14 +267,51 @@ export default function InterviewNotesPage() {
             </div>
             <div className="field">
               <label htmlFor="proj-tone">文体の希望</label>
-              <input
-                id="proj-tone"
-                type="text"
-                className="input"
-                value={project.desiredTone}
-                onChange={(e) => updateField("desiredTone", e.target.value)}
-                placeholder="例：落ち着いた人物伝風。誠実で読みやすい語り口。"
-              />
+              {project.genre === "paper" ? (
+                <>
+                  <select
+                    id="proj-tone"
+                    className="input"
+                    value={
+                      PAPER_STYLE_OPTIONS.some((o) => o.value === project.desiredTone)
+                        ? project.desiredTone
+                        : project.desiredTone
+                          ? "__custom__"
+                          : ""
+                    }
+                    onChange={(e) => {
+                      if (e.target.value === "__custom__") return; // 現在の自由記述を保持
+                      updateField("desiredTone", e.target.value);
+                    }}
+                  >
+                    {/* 既存の自由記述（他モードからの引き継ぎ等）があれば失わないよう温存 */}
+                    {project.desiredTone &&
+                    !PAPER_STYLE_OPTIONS.some((o) => o.value === project.desiredTone) ? (
+                      <option value="__custom__">
+                        現在の指定: {project.desiredTone.slice(0, 24)}
+                        {project.desiredTone.length > 24 ? "…" : ""}
+                      </option>
+                    ) : null}
+                    {PAPER_STYLE_OPTIONS.map((o) => (
+                      <option key={o.label} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="help">
+                    学術論文の文体はほぼ定型のため選択式です。想定投稿先・読者は下の「論文仕様」で別途指定できます。
+                  </p>
+                </>
+              ) : (
+                <input
+                  id="proj-tone"
+                  type="text"
+                  className="input"
+                  value={project.desiredTone}
+                  onChange={(e) => updateField("desiredTone", e.target.value)}
+                  placeholder="例：全体のトーン・語り口の希望（任意）"
+                />
+              )}
             </div>
           </div>
           {project.genre === "blog" ? (

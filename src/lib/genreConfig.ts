@@ -491,6 +491,32 @@ export function paperTypeLabel(v: string | undefined): string {
   return PAPER_TYPE_OPTIONS.find((o) => o.value === v)?.label ?? "原著（実証・IMRaD）";
 }
 
+/**
+ * 論文の文体プリセット。value は desiredTone にそのまま入り、prompt-draft-paper の
+ * 「文体の希望」として本文執筆に反映される（学術文体はほぼ定型なので選択式にする）。
+ */
+export const PAPER_STYLE_OPTIONS: { value: string; label: string }[] = [
+  {
+    value: "",
+    label: "指定なし（である調・学術標準を既定）",
+  },
+  {
+    value:
+      "である調（常体）。一人称は用いず「本稿」「筆者」等を使い、専門用語はそのまま用いる、簡潔で客観的な学術文体",
+    label: "である調・学術標準",
+  },
+  {
+    value:
+      "である調（常体）を基本に、専門用語には簡潔な説明を添える。論理は保ちつつ専門外の読者にも読みやすい平易な学術文体",
+    label: "である調・平易（一般読者にも配慮）",
+  },
+  {
+    value:
+      "ですます調（敬体）。実践報告・教育系の紀要等に向く丁寧な文体。ただし主張と根拠の対応は明確にする",
+    label: "ですます調（紀要・実践報告・教育系）",
+  },
+];
+
 // ===== 翻訳書: 言語・原文種別のプリセット =====
 
 /** 対応言語。将来 es / zh / ko / fr / de を追加するときはここに足すだけでUIに反映される */
