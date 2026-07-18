@@ -19,6 +19,7 @@ import {
   PAPER_TYPE_OPTIONS,
   PAPER_STYLE_OPTIONS,
 } from "@/lib/genreConfig";
+import { PAPER_TEMPLATES, buildPaperOutline, paperTemplateById } from "@/lib/paperTemplates";
 import type {
   LangCode,
   NewsType,
@@ -46,6 +47,8 @@ export default function InterviewNotesPage() {
   const [extracting, setExtracting] = useState(false);
   const [chapterPreview, setChapterPreview] = useState<SourceChapter[] | null>(null);
   const [segmentChars, setSegmentChars] = useState(2000);
+  // 論文モード: 構成テンプレート選択
+  const [paperTemplateId, setPaperTemplateId] = useState("");
 
   useEffect(() => {
     setProject(loadProject());
@@ -104,6 +107,36 @@ export default function InterviewNotesPage() {
     setInfo(null);
     // 章立て生成の前に、AIが確認する事前ヒアリング画面へ
     router.push("/outline/interview");
+  }
+
+  // 論文モード: 選んだテンプレートから章立てを即確定して構成調整へ
+  function handleUsePaperTemplate() {
+    if (!project) return;
+    const tpl = paperTemplateById(paperTemplateId);
+    if (!tpl) {
+      setError("構成テンプレートを選んでください。");
+      return;
+    }
+    if (
+      project.selectedOutline &&
+      project.generatedSections.length > 0 &&
+      !confirm("既に執筆済みの本文があります。構成を作り直すと既存の本文は表示されなくなります。続行しますか？")
+    ) {
+      return;
+    }
+    const outline = buildPaperOutline(tpl, project.paperMeta, project.theme);
+    const next = updateProject((p) => ({
+      ...p,
+      outlineProposals: [outline],
+      selectedOutline: outline,
+      writingMemory: {
+        ...p.writingMemory,
+        selectedOutlineSummary: `${outline.title}：${outline.concept}`,
+      },
+    }));
+    setProject(next);
+    // 既存フローに合流: 構成調整（章の増減・順序・小見出し生成）→ 執筆
+    router.push("/outline/refine");
   }
 
   function handleReset() {
@@ -209,7 +242,7 @@ export default function InterviewNotesPage() {
               onClick={handleGenerateOutline}
               type="button"
             >
-              章立て案を生成する →
+              {project.genre === "paper" ? "AIに構成を提案させる →" : "章立て案を生成する →"}
             </button>
           ) : null}
         </div>
@@ -660,25 +693,33 @@ export default function InterviewNotesPage() {
           ) : null}
           <div className="field-row">
             <div className="field">
-              <label htmlFor="proj-theme">本にしたいテーマ</label>
+              <label htmlFor="proj-theme">
+                {project.genre === "paper" ? "研究テーマ・仮タイトル" : "本にしたいテーマ"}
+              </label>
               <input
                 id="proj-theme"
                 type="text"
                 className="input"
                 value={project.theme}
                 onChange={(e) => updateField("theme", e.target.value)}
+                placeholder={
+                  project.genre === "paper" ? "例：日本語BERTの固有表現抽出への適用" : undefined
+                }
               />
             </div>
-            <div className="field">
-              <label htmlFor="proj-reader">想定読者</label>
-              <input
-                id="proj-reader"
-                type="text"
-                className="input"
-                value={project.targetReader}
-                onChange={(e) => updateField("targetReader", e.target.value)}
-              />
-            </div>
+            {/* 論文モードは「想定読者」を論文仕様の「想定投稿先・読者」に一本化（重複回避） */}
+            {project.genre !== "paper" ? (
+              <div className="field">
+                <label htmlFor="proj-reader">想定読者</label>
+                <input
+                  id="proj-reader"
+                  type="text"
+                  className="input"
+                  value={project.targetReader}
+                  onChange={(e) => updateField("targetReader", e.target.value)}
+                />
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
@@ -831,6 +872,53 @@ export default function InterviewNotesPage() {
       </div>
       )}
 
+      {project.genre === "paper" ? (
+        <div className="panel">
+          <div className="panel-header">
+            <h2>構成の作り方</h2>
+            <span className="hint">テンプレートから選ぶ／AIに提案させる</span>
+          </div>
+          <div className="panel-body">
+            <div className="field" style={{ marginBottom: 12 }}>
+              <label htmlFor="paper-template">構成テンプレート</label>
+              <select
+                id="paper-template"
+                className="input"
+                value={paperTemplateId}
+                onChange={(e) => setPaperTemplateId(e.target.value)}
+              >
+                <option value="">選択してください…</option>
+                {PAPER_TEMPLATES.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.label}
+                    {t.recommendedFor === project.paperMeta?.paperType ? "（種別に最適）" : ""}
+                  </option>
+                ))}
+              </select>
+              {paperTemplateId ? (
+                <p className="help">
+                  章立て：
+                  {paperTemplateById(paperTemplateId)?.roles.map((r) => r.title).join(" → ")}
+                </p>
+              ) : (
+                <p className="help">
+                  論文の構成はほぼ定型です。テンプレートを選ぶと章立てが即確定します（AIの生成待ちなし）。
+                  素材が固まっていない段階では右上の「AIに構成を提案させる」で3案から選べます。
+                </p>
+              )}
+            </div>
+            <button
+              className="btn primary"
+              type="button"
+              onClick={handleUsePaperTemplate}
+              disabled={!paperTemplateId}
+            >
+              このテンプレで構成を作成 →
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <div className="panel">
         <div className="panel-header">
           <h2>次のステップ</h2>
@@ -841,6 +929,12 @@ export default function InterviewNotesPage() {
               <li>原文を取り込み「章に分割する」→ プレビューを確認して「この分割で確定」。</li>
               <li>翻訳画面でセグメントを選び「このセグメントを翻訳」。訳抜け・用語統一・表記揺れをAIが自動チェックします。</li>
               <li>対訳表・用語（ナレッジ）で訳語を確定すると、以降の翻訳とチェックに反映されます。対訳・差分ビューや一括置換も翻訳画面と対訳表画面から使えます。</li>
+            </ol>
+          ) : project.genre === "paper" ? (
+            <ol style={{ margin: 0, paddingLeft: 20, color: "var(--text-soft)", fontSize: 12 }}>
+              <li>研究素材と論文仕様（種別・分野・RQ・貢献・投稿先）を入力します。</li>
+              <li>「構成の作り方」でテンプレートを選ぶと章立てが即確定。迷う場合は「AIに構成を提案させる」で3案から選べます。</li>
+              <li>構成調整で章の増減・順序を整え、小見出しを生成 → 執筆。本文生成後に簡易査読・論理・出典・校閲の診断が付きます（査読通過を保証するものではありません）。</li>
             </ol>
           ) : (
             <ol style={{ margin: 0, paddingLeft: 20, color: "var(--text-soft)", fontSize: 12 }}>
