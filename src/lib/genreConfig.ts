@@ -408,7 +408,6 @@ export const paperConfig: GenreConfig = {
   },
   knowledge: [
     { href: "/references", label: "参考文献・文献カルテ" },
-    { href: "/memory", label: "執筆メモリ" },
   ],
   material: {
     panelTitle: "研究素材",
