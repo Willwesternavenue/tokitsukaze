@@ -259,6 +259,16 @@ export async function exportProjectDocx(project: Project, includeNotes = false):
   }
   children.push(spacer());
 
+  // 論文モード: タイトル/著者の下に要旨・キーワードを出す
+  if (isPaper && project.paperMeta?.abstract?.trim()) {
+    children.push(heading("要旨", HeadingLevel.HEADING_1));
+    children.push(...bodyParagraphs(project.paperMeta.abstract));
+    if (project.paperMeta.keywords?.trim()) {
+      children.push(para(`キーワード：${project.paperMeta.keywords}`));
+    }
+    children.push(spacer());
+  }
+
   const outline = project.selectedOutline;
   if (!outline) {
     children.push(para("（構成案が未選択です。原稿生成画面で構成案を選んでください。）"));
@@ -373,4 +383,35 @@ export async function exportBilingualDocx(project: Project): Promise<void> {
     sections: [{ properties: {}, children }],
   });
   await downloadDoc(doc, `対訳_${fileSafe(project.name)}.docx`);
+}
+
+// ===== 論文モード: 予稿（短縮版）Word 出力 =====
+
+/**
+ * 予稿（4〜8p の短縮版）を Word で出力する。
+ * タイトル・著者・要旨・キーワードに続けて、preprint（Markdown本文）を整形して出す。
+ */
+export async function exportPreprintDocx(project: Project): Promise<void> {
+  const preprint = project.paperMeta?.preprint?.trim();
+  if (!preprint) throw new Error("予稿がありません。先に「予稿を生成」してください。");
+  const subjectLabel = getGenreConfig(project.genre).material.subjectLabel;
+  const children: (Paragraph | Table)[] = [heading(project.name, HeadingLevel.TITLE)];
+  children.push(para(`${subjectLabel}：${project.intervieweeName || ""}（予稿）`));
+  children.push(spacer());
+  if (project.paperMeta?.abstract?.trim()) {
+    children.push(heading("要旨", HeadingLevel.HEADING_1));
+    children.push(...bodyParagraphs(project.paperMeta.abstract));
+    if (project.paperMeta.keywords?.trim()) {
+      children.push(para(`キーワード：${project.paperMeta.keywords}`));
+    }
+    children.push(spacer());
+  }
+  children.push(...bodyParagraphs(preprint));
+
+  const doc = new Document({
+    creator: "アキカゼ出版AI",
+    title: `${project.name}（予稿）`,
+    sections: [{ properties: {}, children }],
+  });
+  await downloadDoc(doc, `予稿_${fileSafe(project.name)}.docx`);
 }

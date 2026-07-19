@@ -20,6 +20,8 @@ import {
   PAPER_STYLE_OPTIONS,
 } from "@/lib/genreConfig";
 import { PAPER_TEMPLATES, buildPaperOutline, paperTemplateById } from "@/lib/paperTemplates";
+import { generateAbstract, generatePreprint } from "@/lib/paperClient";
+import { exportPreprintDocx } from "@/lib/docx";
 import type {
   LangCode,
   NewsType,
@@ -49,6 +51,9 @@ export default function InterviewNotesPage() {
   const [segmentChars, setSegmentChars] = useState(2000);
   // 論文モード: 構成テンプレート選択
   const [paperTemplateId, setPaperTemplateId] = useState("");
+  // 論文モード: 要旨・予稿の生成状態
+  const [abstractGen, setAbstractGen] = useState(false);
+  const [preprintGen, setPreprintGen] = useState(false);
 
   useEffect(() => {
     setProject(loadProject());
@@ -137,6 +142,83 @@ export default function InterviewNotesPage() {
     setProject(next);
     // 既存フローに合流: 構成調整（章の増減・順序・小見出し生成）→ 執筆
     router.push("/outline/refine");
+  }
+
+  // 論文モード: 要旨（アブストラクト）をAI生成
+  async function handleGenerateAbstract() {
+    if (!project) return;
+    if (project.generatedSections.length === 0) {
+      setError("先に本文を生成してください（要旨は本文の要点から作られます）。");
+      return;
+    }
+    setError(null);
+    setInfo(null);
+    setAbstractGen(true);
+    try {
+      const { abstract, keywords } = await generateAbstract(project);
+      const next = updateProject((p) => ({
+        ...p,
+        paperMeta: {
+          paperType: p.paperMeta?.paperType ?? "empirical",
+          field: p.paperMeta?.field ?? "",
+          researchQuestion: p.paperMeta?.researchQuestion ?? "",
+          contributions: p.paperMeta?.contributions ?? "",
+          venue: p.paperMeta?.venue ?? "",
+          ...p.paperMeta,
+          abstract,
+          // キーワード未入力なら提案で埋める（既存があれば尊重）
+          keywords: p.paperMeta?.keywords?.trim() ? p.paperMeta.keywords : keywords,
+        },
+      }));
+      setProject(next);
+      setInfo("要旨を生成しました。内容を確認・編集してください。");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAbstractGen(false);
+    }
+  }
+
+  // 論文モード: 予稿（4〜8p の短縮版）をAI生成
+  async function handleGeneratePreprint() {
+    if (!project) return;
+    if (project.generatedSections.length === 0) {
+      setError("先に本文を生成してください（予稿はフル原稿を圧縮して作られます）。");
+      return;
+    }
+    setError(null);
+    setInfo(null);
+    setPreprintGen(true);
+    try {
+      const preprint = await generatePreprint(project);
+      const next = updateProject((p) => ({
+        ...p,
+        paperMeta: {
+          paperType: p.paperMeta?.paperType ?? "empirical",
+          field: p.paperMeta?.field ?? "",
+          researchQuestion: p.paperMeta?.researchQuestion ?? "",
+          contributions: p.paperMeta?.contributions ?? "",
+          venue: p.paperMeta?.venue ?? "",
+          ...p.paperMeta,
+          preprint,
+        },
+      }));
+      setProject(next);
+      setInfo("予稿を生成しました。内容を確認・編集し、「予稿Wordを出力」で書き出せます。");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPreprintGen(false);
+    }
+  }
+
+  async function handleExportPreprint() {
+    if (!project) return;
+    try {
+      await exportPreprintDocx(project);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
   }
 
   function handleReset() {
@@ -915,6 +997,70 @@ export default function InterviewNotesPage() {
             >
               このテンプレで構成を作成 →
             </button>
+          </div>
+        </div>
+      ) : null}
+
+      {project.genre === "paper" ? (
+        <div className="panel">
+          <div className="panel-header">
+            <h2>要旨・予稿（投稿用）</h2>
+            <span className="hint">本文の要点から生成します</span>
+          </div>
+          <div className="panel-body">
+            {/* 要旨 */}
+            <div className="field" style={{ marginBottom: 8 }}>
+              <div className="flex between" style={{ alignItems: "center" }}>
+                <label htmlFor="paper-abstract">要旨（アブストラクト）</label>
+                <button className="btn sm" type="button" onClick={handleGenerateAbstract} disabled={abstractGen}>
+                  {abstractGen ? <span className="spinner" /> : null}
+                  {abstractGen ? "生成中…" : "AIで生成"}
+                </button>
+              </div>
+              <textarea
+                id="paper-abstract"
+                className="input"
+                rows={5}
+                value={project.paperMeta?.abstract ?? ""}
+                onChange={(e) => updatePaperField({ abstract: e.target.value })}
+                placeholder="300〜500字の要旨。「AIで生成」で本文の要点から作成できます（編集可）。"
+              />
+              <p className="help">要旨とキーワードは「全体Wordを出力」の先頭に載ります。</p>
+            </div>
+
+            {/* 予稿 */}
+            <div className="field" style={{ marginTop: 12 }}>
+              <div className="flex between" style={{ alignItems: "center" }}>
+                <label htmlFor="paper-preprint">予稿（研究会・学会向けの短縮版・4〜8ページ）</label>
+                <div className="row-actions" style={{ gap: 8 }}>
+                  <button className="btn sm" type="button" onClick={handleGeneratePreprint} disabled={preprintGen}>
+                    {preprintGen ? <span className="spinner" /> : null}
+                    {preprintGen ? "生成中…" : "AIで生成（4〜8p）"}
+                  </button>
+                  <button
+                    className="btn sm primary"
+                    type="button"
+                    onClick={handleExportPreprint}
+                    disabled={!project.paperMeta?.preprint?.trim()}
+                    title="予稿をWordで書き出す"
+                  >
+                    予稿Wordを出力
+                  </button>
+                </div>
+              </div>
+              <textarea
+                id="paper-preprint"
+                className="input mono"
+                rows={12}
+                value={project.paperMeta?.preprint ?? ""}
+                onChange={(e) => updatePaperField({ preprint: e.target.value })}
+                placeholder="フル原稿を圧縮した予稿（Markdown）。「AIで生成」で作成→編集→「予稿Wordを出力」。"
+              />
+              <p className="help">
+                フル原稿（全体Word）はそのまま残ります。予稿は投稿先のページ数（研究会4〜8p／国際学会8〜10p）に合わせた短縮版です。
+                ページ厳守やLaTeX指定の投稿先では、この予稿を下書きとして各テンプレートに流し込んでください。
+              </p>
+            </div>
           </div>
         </div>
       ) : null}
