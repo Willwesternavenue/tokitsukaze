@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { loadProject } from "@/lib/storage";
 import { getGenreConfig } from "@/lib/genreConfig";
+import { plannedGenres } from "@/lib/staffRegistry";
 import type { Genre } from "@/lib/types";
 
 /**
@@ -262,6 +263,29 @@ export default function GuidePage(): JSX.Element {
               プロジェクト切替メニューの JSON エクスポート／インポートを使ってください（参照ライブラリも一緒に移行できます）。
             </div>
           </details>
+        </div>
+      </div>
+
+      {/* 今後対応予定のモード（ロードマップ） */}
+      <div className="panel">
+        <div className="panel-header">
+          <h2>今後対応予定のモード</h2>
+        </div>
+        <div className="panel-body dense">
+          <p className="muted" style={{ marginBottom: 10 }}>
+            現在のモード（ジャンル）は「01 素材」で切り替えられます。以下は今後の対応を予定・検討しているモードです。
+          </p>
+          <ul className="list-block" style={{ border: "1px solid var(--border)", borderRadius: 3 }}>
+            {plannedGenres.map((g) => (
+              <li key={g.label} className="flex" style={{ gap: 10 }}>
+                <span className={`badge ${g.status === "next" ? "" : "gray"}`}>
+                  {g.status === "next" ? "次期対応" : "検討中"}
+                </span>
+                <strong style={{ fontSize: 12 }}>{g.label}</strong>
+                <span className="muted" style={{ fontSize: 11 }}>{g.note}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
     </>
