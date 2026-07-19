@@ -36,9 +36,68 @@ function listBlock(title: string, items: string[]): Paragraph[] {
   return out;
 }
 
+/**
+ * インラインMarkdown（**太字** / *斜体* / `コード`）を TextRun[] に変換する。
+ * AI本文にはMarkdown記法が混ざるため、Word出力では記号を出さず書式にする。
+ */
+function renderInline(text: string): TextRun[] {
+  const runs: TextRun[] = [];
+  const re = /(\*\*([^*]+)\*\*|`([^`]+)`|\*([^*\s][^*]*?)\*|__([^_]+)__)/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) runs.push(new TextRun(text.slice(last, m.index)));
+    if (m[2] !== undefined) runs.push(new TextRun({ text: m[2], bold: true }));
+    else if (m[3] !== undefined) runs.push(new TextRun({ text: m[3] })); // `code` は記号だけ外す
+    else if (m[4] !== undefined) runs.push(new TextRun({ text: m[4], italics: true }));
+    else if (m[5] !== undefined) runs.push(new TextRun({ text: m[5], bold: true }));
+    last = re.lastIndex;
+  }
+  if (last < text.length) runs.push(new TextRun(text.slice(last)));
+  return runs.length ? runs : [new TextRun(text)];
+}
+
+/**
+ * 本文（Markdownが混ざり得る）を Word 段落に変換する。
+ * 見出し(#)・箇条書き(-,*,+)・番号付き は書式化し、余分な記号を残さない。
+ */
 function bodyParagraphs(body: string): Paragraph[] {
   if (!body) return [para("（本文未生成）")];
-  return body.split(/\n+/).filter(Boolean).map((line) => para(line));
+  const out: Paragraph[] = [];
+  for (const raw of body.replace(/\r\n?/g, "\n").split("\n")) {
+    const line = raw.replace(/\s+$/, "");
+    if (!line.trim()) continue;
+    // コードフェンス・水平線は捨てる
+    if (/^```/.test(line) || /^(\s*([-*_])\s*){3,}$/.test(line.trim())) continue;
+
+    // 見出し: ### 2.5.2 タイトル → Word見出し（節はH2なので本文内はH3/H4）
+    const h = line.match(/^(#{1,6})\s+(.*)$/);
+    if (h) {
+      const level = h[1].length;
+      out.push(
+        new Paragraph({
+          children: renderInline(h[2].trim()),
+          heading: level <= 2 ? HeadingLevel.HEADING_3 : HeadingLevel.HEADING_4,
+        }),
+      );
+      continue;
+    }
+    // 箇条書き: - / * / + → ・ 付き段落
+    const b = line.match(/^\s*[-*+]\s+(.*)$/);
+    if (b) {
+      out.push(new Paragraph({ children: [new TextRun("・"), ...renderInline(b[1])] }));
+      continue;
+    }
+    // 引用: > text → 記号を外す
+    const q = line.match(/^\s*>\s?(.*)$/);
+    if (q) {
+      out.push(new Paragraph({ children: renderInline(q[1]) }));
+      continue;
+    }
+    // 通常段落（番号付き "1." はそのままでOK）
+    out.push(new Paragraph({ children: renderInline(line) }));
+  }
+  return out.length ? out : [para("")];
 }
 
 /**
