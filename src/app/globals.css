@@ -1771,3 +1771,33 @@ mark.diff-char-add {
   font-weight: 600;
   color: var(--text-soft);
 }
+
+/* ===== レビュー: 重要度トリアージ ===== */
+.triage-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.triage-chip {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text-soft);
+}
+.triage-chip.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.triage-chip.danger.active { border-color: var(--danger); background: #fdecea; color: var(--danger); }
+.triage-chip.warn.active { border-color: var(--warn); background: var(--warn-soft); color: var(--warn); }
+.triage-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
