@@ -32,6 +32,16 @@ function spacer(): Paragraph {
   return new Paragraph({ children: [new TextRun("")] });
 }
 
+// 参考文献リストの1行。学術文献リスト標準のぶら下げインデント（2行目以降を字下げして
+// 番号/著者の頭を揃える）＋行間を少し詰める。単位は twip（480≒0.33インチ）。
+function bibliographyParagraph(text: string): Paragraph {
+  return new Paragraph({
+    children: [new TextRun({ text })],
+    indent: { left: 480, hanging: 480 },
+    spacing: { after: 80 },
+  });
+}
+
 function listBlock(title: string, items: string[]): Paragraph[] {
   if (!items || items.length === 0) return [];
   const out: Paragraph[] = [para(title, { bold: true })];
@@ -136,12 +146,12 @@ export async function exportProjectDocx(project: Project): Promise<void> {
     }
   }
 
-  // 論文モード: 参考文献リスト（登録文献から決定論的に整形）
+  // 論文モード: 参考文献リスト（登録文献から決定論的に整形。ぶら下げインデントで体裁を揃える）
   if (isPaper && paperRefs.length > 0) {
     children.push(heading("参考文献", HeadingLevel.HEADING_1));
     const entries = buildBibliography(paperRefs, citationStyle, allBodyText);
     for (const entry of entries) {
-      children.push(new Paragraph({ text: entry }));
+      children.push(bibliographyParagraph(entry));
     }
     children.push(spacer());
   }
