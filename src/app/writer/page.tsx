@@ -570,11 +570,11 @@ export default function WriterPage() {
     }
   }
 
-  async function handleExportSection() {
+  async function handleExportSection(includeNotes = false) {
     if (!project || !currentDraft) return;
     setExporting(true);
     try {
-      await exportSectionDocx(project, currentDraft);
+      await exportSectionDocx(project, currentDraft, includeNotes);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -582,7 +582,7 @@ export default function WriterPage() {
     }
   }
 
-  async function handleExportAll() {
+  async function handleExportAll(includeNotes = false) {
     if (!project) return;
     if (project.generatedSections.length === 0) {
       setError("Word出力対象の本文がありません。先に本文を生成してください。");
@@ -590,7 +590,7 @@ export default function WriterPage() {
     }
     setExporting(true);
     try {
-      await exportProjectDocx(project);
+      await exportProjectDocx(project, includeNotes);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -684,9 +684,18 @@ export default function WriterPage() {
               Fountainで出力
             </button>
           ) : null}
-          <button className="btn" onClick={handleExportAll} disabled={exporting} type="button">
+          <button className="btn" onClick={() => handleExportAll(false)} disabled={exporting} type="button">
             {exporting ? <span className="spinner" /> : null}
             {isTranslation ? "訳文Wordを出力" : "全体Wordを出力"}
+          </button>
+          <button
+            className="btn"
+            onClick={() => handleExportAll(true)}
+            disabled={exporting}
+            type="button"
+            title="本文に加えて編集メモ・追加質問・事実確認・つながりメモも書き出す（校正用）"
+          >
+            メモ付きWord
           </button>
         </div>
       </div>
@@ -946,7 +955,7 @@ export default function WriterPage() {
                     </button>
                     <button
                       className="btn"
-                      onClick={handleExportSection}
+                      onClick={() => handleExportSection(false)}
                       disabled={!currentDraft || exporting}
                       type="button"
                     >
