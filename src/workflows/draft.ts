@@ -37,6 +37,12 @@ import {
   terminologyCheckStep,
 } from "./agents/reviewers";
 import { langLabel, mediaTypeLabel, newsTypeLabel, paperTypeLabel, workTypeLabel } from "@/lib/genreConfig";
+import {
+  authorYearMarker,
+  citationInstruction,
+  citationStyleLabel,
+  DEFAULT_CITATION_STYLE,
+} from "@/lib/citation";
 
 export type DraftWorkflowInput = {
   project: Project;
@@ -461,15 +467,18 @@ function buildPaperContext(project: Project): string {
       .filter(Boolean)
       .join("\n"),
   );
+  const style = m?.citationStyle ?? DEFAULT_CITATION_STYLE;
   if (refs.length > 0) {
-    parts.push("## 参考文献（登録済み。引用マーカー〔著者, 年〕はこのリストの文献のみに使うこと）");
+    parts.push(
+      `## 参考文献（登録済み。体裁=${citationStyleLabel(style)}。引用は各文献末尾の【引用マーカー】をそのまま本文に書くこと）`,
+    );
     parts.push(
       refs
         .map(
           (r) =>
             `- ${r.title}${r.author ? ` / ${r.author}` : ""}${r.source ? `（${r.source}）` : ""}${
               r.year ? ` ${r.year}` : ""
-            }${r.notes ? ` — ${r.notes}` : ""}`,
+            }${r.notes ? ` — ${r.notes}` : ""} 【引用マーカー】${authorYearMarker(r)}`,
         )
         .join("\n"),
     );
@@ -484,8 +493,8 @@ function buildPaperContext(project: Project): string {
   }
   parts.push(
     "\n【守るべきこと】\n" +
-      "- 引用マーカー〔著者, 年〕は上記の参考文献にある文献のみに使う。無い場合は架空文献を作らず〔要出典〕と書く\n" +
-      "- 素材にない結果・数値を書かない。不確かなものは factCheckPoints に挙げる\n" +
+      citationInstruction(style) +
+      "\n- 素材にない結果・数値を書かない。不確かなものは factCheckPoints に挙げる\n" +
       "- 用語は用語集の定義と矛盾しない使い方をすること",
   );
   return parts.join("\n\n");

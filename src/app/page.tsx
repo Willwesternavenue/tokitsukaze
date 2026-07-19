@@ -18,6 +18,7 @@ import {
   WORK_TYPE_OPTIONS,
   PAPER_TYPE_OPTIONS,
 } from "@/lib/genreConfig";
+import { CITATION_STYLE_OPTIONS, type CitationStyle } from "@/lib/citation";
 import type {
   LangCode,
   NewsType,
@@ -85,6 +86,7 @@ export default function InterviewNotesPage() {
         contributions: prev.paperMeta?.contributions ?? "",
         venue: prev.paperMeta?.venue ?? "",
         keywords: prev.paperMeta?.keywords,
+        citationStyle: prev.paperMeta?.citationStyle,
         ...patch,
       };
       const next = { ...prev, paperMeta: merged };
@@ -489,6 +491,29 @@ export default function InterviewNotesPage() {
                     onChange={(e) => updatePaperField({ keywords: e.target.value })}
                     placeholder="例：大規模言語モデル, 教育評価, 自動採点"
                   />
+                </div>
+              </div>
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="paper-citation">引用・参考文献の体裁</label>
+                  <select
+                    id="paper-citation"
+                    className="input"
+                    value={project.paperMeta?.citationStyle ?? "apa"}
+                    onChange={(e) =>
+                      updatePaperField({ citationStyle: e.target.value as CitationStyle })
+                    }
+                  >
+                    {CITATION_STYLE_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                  <p className="help">
+                    {CITATION_STYLE_OPTIONS.find(
+                      (o) => o.value === (project.paperMeta?.citationStyle ?? "apa"),
+                    )?.help}
+                    {" "}投稿先の指定に合わせて選んでください。Word末尾に参考文献リストが付きます。
+                  </p>
                 </div>
               </div>
             </>

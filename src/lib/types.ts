@@ -258,6 +258,8 @@ export type PaperMeta = {
   contributions: string;     // 主張したい貢献・新規性
   venue: string;             // 想定投稿先・読者（紀要／学会誌／一般向け学術書 等）
   keywords?: string;         // キーワード（カンマ区切り。任意）
+  /** 引用・参考文献の体裁（未設定は "apa"＝従来の〔著者, 年〕互換）。src/lib/citation.ts */
+  citationStyle?: import("./citation").CitationStyle;
 };
 
 // ===== 翻訳書モード =====

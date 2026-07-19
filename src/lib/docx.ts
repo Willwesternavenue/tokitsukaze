@@ -14,6 +14,11 @@ import {
 } from "docx";
 import { saveAs } from "file-saver";
 import type { Project, SectionDraft } from "./types";
+import {
+  applyInTextCitations,
+  buildBibliography,
+  DEFAULT_CITATION_STYLE,
+} from "./citation";
 
 function heading(text: string, level: (typeof HeadingLevel)[keyof typeof HeadingLevel]): Paragraph {
   return new Paragraph({ text, heading: level });
@@ -35,15 +40,16 @@ function listBlock(title: string, items: string[]): Paragraph[] {
   return out;
 }
 
-function bodyParagraphs(body: string): Paragraph[] {
+function bodyParagraphs(body: string, transform?: (t: string) => string): Paragraph[] {
   if (!body) return [para("（本文未生成）")];
-  return body.split(/\n+/).filter(Boolean).map((line) => para(line));
+  const text = transform ? transform(body) : body;
+  return text.split(/\n+/).filter(Boolean).map((line) => para(line));
 }
 
-function sectionParagraphs(draft: SectionDraft): Paragraph[] {
+function sectionParagraphs(draft: SectionDraft, transformBody?: (t: string) => string): Paragraph[] {
   const blocks: Paragraph[] = [];
   blocks.push(heading(draft.sectionTitle, HeadingLevel.HEADING_2));
-  blocks.push(...bodyParagraphs(draft.body));
+  blocks.push(...bodyParagraphs(draft.body, transformBody));
   blocks.push(spacer());
   blocks.push(...listBlock("編集メモ", draft.editorNotes));
   blocks.push(...listBlock("追加質問", draft.followUpQuestions));
@@ -89,6 +95,19 @@ export async function exportProjectDocx(project: Project): Promise<void> {
   children.push(para(`想定読者：${project.targetReader}`));
   children.push(spacer());
 
+  // 論文モード: 引用スタイルに応じて本文マーカーを変換し、末尾に参考文献リストを付ける。
+  // 番号式は全本文の連結を出現順の採番に使うため、先に全文を集める。
+  const isPaper = project.genre === "paper";
+  const paperRefs = isPaper ? project.references ?? [] : [];
+  const citationStyle = project.paperMeta?.citationStyle ?? DEFAULT_CITATION_STYLE;
+  const allBodyText = isPaper
+    ? project.generatedSections.map((d) => d.body).filter(Boolean).join("\n")
+    : "";
+  const transformBody =
+    isPaper && paperRefs.length > 0
+      ? (t: string) => applyInTextCitations(t, paperRefs, citationStyle, allBodyText)
+      : undefined;
+
   const outline = project.selectedOutline;
   if (!outline) {
     children.push(para("（構成案が未選択です。原稿生成画面で構成案を選んでください。）"));
@@ -107,7 +126,7 @@ export async function exportProjectDocx(project: Project): Promise<void> {
           (d) => d.chapterId === chapter.id && d.sectionId === section.id,
         );
         if (draft) {
-          children.push(...sectionParagraphs(draft));
+          children.push(...sectionParagraphs(draft, transformBody));
         } else {
           children.push(heading(section.title, HeadingLevel.HEADING_2));
           children.push(para("（本文未生成）"));
@@ -115,6 +134,16 @@ export async function exportProjectDocx(project: Project): Promise<void> {
         }
       }
     }
+  }
+
+  // 論文モード: 参考文献リスト（登録文献から決定論的に整形）
+  if (isPaper && paperRefs.length > 0) {
+    children.push(heading("参考文献", HeadingLevel.HEADING_1));
+    const entries = buildBibliography(paperRefs, citationStyle, allBodyText);
+    for (const entry of entries) {
+      children.push(new Paragraph({ text: entry }));
+    }
+    children.push(spacer());
   }
 
   const doc = new Document({
