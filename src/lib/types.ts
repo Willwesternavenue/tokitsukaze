@@ -358,6 +358,21 @@ export type ScreenplayMeta = {
 
 // ===== ビジネス書: 参考文献・用語集 =====
 
+/**
+ * 文献カルテ（論文モード）。引用文献の「中身」を学術的な観点で保持し、
+ * 関連研究・考察の執筆に使う（メタデータだけでは中身が書けないため）。
+ * 小説の作品カルテ（ReferenceWork: 文体プロファイル/確定設定/登場人物）とは別物。
+ */
+export type ReferenceCard = {
+  refKind?: string;        // 種別（提案手法 / 実証 / 総説 / データセット / 理論 等）
+  purpose?: string;        // 目的・リサーチクエスチョン
+  method?: string;         // 手法の要点
+  findings?: string;       // 主要な結果・発見
+  contribution?: string;   // 貢献・新規性
+  limitations?: string;    // 限界・批判点
+  relationToThis?: string; // 本研究との関係（差分・引用の使いどころ）
+};
+
 export type Reference = {
   id: string;
   title: string;
@@ -366,6 +381,8 @@ export type Reference = {
   year?: string;
   url?: string;
   notes?: string;    // どの主張の裏付けに使うか等
+  /** 論文モードの文献カルテ（PDF取込やAI抽出で埋まる。任意・後方互換） */
+  card?: ReferenceCard;
 };
 
 export type GlossaryTerm = {

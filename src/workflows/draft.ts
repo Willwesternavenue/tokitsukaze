@@ -131,8 +131,9 @@ export async function draftWorkflow(input: DraftWorkflowInput): Promise<DraftWor
       if (enabled("format-check")) steps.push(screenplayFormatStep(ctx, runId));
       if (enabled("runtime-check")) steps.push(runtimeCheckStep(ctx, runId));
     }
-    // 参照ライブラリ: 参照作品を1件以上選択している時のみ (全ジャンル)
-    if ((input.referenceWorks ?? []).length > 0) {
+    // 参照ライブラリ: 参照作品を1件以上選択している時のみ (小説等の作品向け)。
+    // 論文モードは対象外（重複=過去作の主張再掲・一貫性=キャラ口調 は論文に無意味）
+    if (input.project.genre !== "paper" && (input.referenceWorks ?? []).length > 0) {
       if (enabled("repetition-check")) steps.push(repetitionCheckStep(ctx, runId));
       if (enabled("continuity-check")) steps.push(continuityCheckStep(ctx, runId));
     }
@@ -206,8 +207,13 @@ async function draftStep(
                 : project.genre === "paper"
                   ? buildPaperContext(project)
                   : "";
-  // 参照ライブラリ（全ジャンル共通・選択作品があれば）
-  const refContext = buildReferenceContext(input.referenceWorks ?? [], project.genre);
+  // 参照ライブラリ（小説向けの作品カルテ＝文体踏襲・キャラ矛盾防止）。
+  // 論文モードには文体プロファイル・登場人物の概念が無意味なので注入しない
+  //（論文の文献は /references の文献カルテで扱う）。
+  const refContext =
+    project.genre === "paper"
+      ? ""
+      : buildReferenceContext(input.referenceWorks ?? [], project.genre);
   const systemPromptFinal =
     tpl.systemPrompt +
     (genreContext ? `\n\n${genreContext}` : "") +
@@ -473,6 +479,33 @@ function buildPaperContext(project: Project): string {
         )
         .join("\n"),
     );
+    // 文献カルテ（中身）を持つ文献は、関連研究・考察を正確に書くために要点を注入する。
+    // 肥大化ガード: 上限8件・各項目は短く。
+    const carded = refs.filter((r) => r.card && Object.values(r.card).some(Boolean)).slice(0, 8);
+    if (carded.length > 0) {
+      parts.push("## 文献カルテ（登録文献の中身。関連研究・考察はこの内容に基づいて書くこと）");
+      parts.push(
+        carded
+          .map((r) => {
+            const c = r.card!;
+            const lines = [
+              `■ ${r.title}${r.author ? ` / ${r.author}` : ""}${r.year ? `（${r.year}）` : ""}`,
+              c.refKind ? `  種別: ${c.refKind}` : "",
+              c.purpose ? `  目的: ${c.purpose.slice(0, 200)}` : "",
+              c.method ? `  手法: ${c.method.slice(0, 200)}` : "",
+              c.findings ? `  結果: ${c.findings.slice(0, 240)}` : "",
+              c.contribution ? `  貢献: ${c.contribution.slice(0, 160)}` : "",
+              c.limitations ? `  限界: ${c.limitations.slice(0, 160)}` : "",
+              c.relationToThis ? `  本研究との関係: ${c.relationToThis.slice(0, 160)}` : "",
+            ].filter(Boolean);
+            return lines.join("\n");
+          })
+          .join("\n\n"),
+      );
+      parts.push(
+        "※ 文献カルテに書かれていない結果・数値を、その文献の主張として書かないこと（カルテにない主張は〔要出典〕）",
+      );
+    }
   } else {
     parts.push(
       "## 参考文献\n（未登録。引用マーカー〔著者, 年〕は一切使わず、出典が必要な箇所は〔要出典〕とすること）",

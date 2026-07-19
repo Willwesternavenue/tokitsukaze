@@ -1756,3 +1756,18 @@ mark.diff-char-add {
 .gate-lock:hover {
   background: var(--panel);
 }
+
+/* ===== 論文モード: 文献カルテ ===== */
+.ref-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-alt);
+  padding: 8px 12px;
+  margin-top: 4px;
+}
+.ref-card > summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-soft);
+}
