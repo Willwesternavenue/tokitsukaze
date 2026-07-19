@@ -5,23 +5,19 @@
  * /writer（単発・一括翻訳）と /terms（対訳表の波及再翻訳）の両方から使う。
  */
 
-import { postJson } from "./apiClient";
+import { pollRun, postJson } from "./apiClient";
 import {
   effectiveTermPairs,
   getSelectedReferenceWorks,
+  loadProject,
   loadPrompts,
   saveSectionAgentReports,
   upsertDraft,
   withStyleRules,
 } from "./storage";
 import { getGenreConfig } from "./genreConfig";
-import type {
-  AgentReportSummary,
-  Chapter,
-  Project,
-  Section,
-  SectionDraft,
-} from "./types";
+import type { DraftWorkflowResult } from "@/workflows/draft";
+import type { Chapter, Project, Section } from "./types";
 
 /**
  * API に渡す project を軽量化する（翻訳書モードのみ）。
@@ -52,37 +48,48 @@ export function slimProjectForDraft(project: Project, keepSectionId: string): Pr
 }
 
 /**
- * 1セクションの本文（翻訳）を生成して localStorage に保存し、最新の Project を返す。
- * - baseProject を context として渡す（バッチ実行では直前の結果を織り込むため毎回最新を渡す）
- * - 翻訳書モードでは既存訳文を bodyHistory に退避してから差し替える
+ * 本文生成を開始し runId を返す（サーバ側でバックグラウンド実行）。
+ * runId を保存しておけば、タブ切替・移動・リロードから復帰して結果を回収できる。
  */
-export async function generateSectionDraft(
+export async function startSectionDraft(
   baseProject: Project,
   chapter: Chapter,
   section: Section,
-): Promise<Project> {
+): Promise<string> {
   const prompts = loadPrompts();
   const base = prompts.find(
     (p) => p.id === getGenreConfig(baseProject.genre).pipelinePrompts.draft,
   );
   const promptTemplate = base ? withStyleRules(base) : undefined;
-  const r = await postJson<{ draft?: SectionDraft; agentReports?: AgentReportSummary[] }>(
-    "/api/generate-draft",
-    {
-      project: slimProjectForDraft(baseProject, section.id),
-      chapter,
-      section,
-      promptTemplate,
-      referenceWorks: getSelectedReferenceWorks(baseProject),
-    },
-  );
-  if (!r.ok) throw new Error(r.error ?? "本文生成に失敗しました。");
-  const draft = r.data?.draft;
+  const r = await postJson<{ runId?: string }>("/api/generate-draft", {
+    project: slimProjectForDraft(baseProject, section.id),
+    chapter,
+    section,
+    promptTemplate,
+    referenceWorks: getSelectedReferenceWorks(baseProject),
+  });
+  if (!r.ok) throw new Error(r.error ?? "生成の開始に失敗しました。");
+  const runId = r.data?.runId;
+  if (!runId) throw new Error("生成を開始できませんでした。");
+  return runId;
+}
+
+/**
+ * 開始済み run（runId）を完了までポーリングし、結果を localStorage に保存して
+ * 最新の Project を返す。復帰（resume）でもそのまま使える。
+ * 翻訳書モードでは既存訳文を bodyHistory に退避する。
+ */
+export async function finishSectionDraft(runId: string): Promise<Project> {
+  const poll = await pollRun<DraftWorkflowResult>(runId);
+  if (!poll.ok) throw new Error(poll.error);
+  const draft = poll.result?.draft;
   if (!draft) throw new Error("AIから本文が返りませんでした。");
 
-  if (baseProject.genre === "translation") {
-    const old = baseProject.generatedSections.find(
-      (d) => d.chapterId === chapter.id && d.sectionId === section.id,
+  // 適用先は「現在の」プロジェクト（復帰時も含めて最新を読む）
+  const current = loadProject();
+  if (current.genre === "translation") {
+    const old = current.generatedSections.find(
+      (d) => d.chapterId === draft.chapterId && d.sectionId === draft.sectionId,
     );
     if (old?.body) {
       draft.bodyHistory = [
@@ -94,7 +101,20 @@ export async function generateSectionDraft(
 
   upsertDraft(draft);
   const key = `${draft.chapterId}::${draft.sectionId}`;
-  return saveSectionAgentReports(key, r.data?.agentReports ?? []);
+  return saveSectionAgentReports(key, poll.result.agentReports ?? []);
+}
+
+/**
+ * 1セクションの本文を生成して保存し、最新の Project を返す（開始→完了の一括版）。
+ * 一括翻訳・波及再生成などのループから使う。
+ */
+export async function generateSectionDraft(
+  baseProject: Project,
+  chapter: Chapter,
+  section: Section,
+): Promise<Project> {
+  const runId = await startSectionDraft(baseProject, chapter, section);
+  return finishSectionDraft(runId);
 }
 
 /** 構成順の (chapter, section) 平坦リスト */

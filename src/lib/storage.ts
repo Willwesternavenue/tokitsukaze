@@ -19,6 +19,8 @@ const KEY_PROMPTS = "kikigaki:prompts:v1";
 const KEY_LIBRARY = "akikaze:library:v1";
 // グローバル対訳表（シリーズ物・分野術語集の使い回し。参照ライブラリと同パターン）
 const KEY_TERMSETS = "akikaze:termsets:v1";
+// 進行中の本文生成 run（タブ切替・移動・リロードからの復帰用）
+const KEY_PENDING_RUNS = "akikaze:pendingRuns:v1";
 
 export function isBrowser(): boolean {
   return typeof window !== "undefined";
@@ -658,6 +660,67 @@ export function replaceDraftBody(
       return { ...d, body: newBody, bodyHistory: history, updatedAt: new Date().toISOString() };
     }),
   }));
+}
+
+// ===== 進行中の本文生成 run（復帰用）=====
+// 本文生成は runId 即返し→ポーリングになったため、進行中の runId を保存しておき、
+// /writer への再訪・タブ復帰・リロード時に再ポーリングして結果を回収する。
+
+export type PendingRun = {
+  projectId: string;
+  chapterId: string;
+  sectionId: string;
+  chapterTitle: string;
+  sectionTitle: string;
+  runId: string;
+  startedAt: string;
+};
+
+function pendingKey(projectId: string, chapterId: string, sectionId: string): string {
+  return `${projectId}::${chapterId}::${sectionId}`;
+}
+
+export function loadPendingRuns(): Record<string, PendingRun> {
+  if (!isBrowser()) return {};
+  const raw = safeParse<Record<string, PendingRun>>(localStorage.getItem(KEY_PENDING_RUNS));
+  return raw && typeof raw === "object" ? raw : {};
+}
+
+function savePendingRuns(map: Record<string, PendingRun>): void {
+  if (!isBrowser()) return;
+  localStorage.setItem(KEY_PENDING_RUNS, JSON.stringify(map));
+}
+
+export function setPendingRun(run: PendingRun): void {
+  const map = loadPendingRuns();
+  map[pendingKey(run.projectId, run.chapterId, run.sectionId)] = run;
+  savePendingRuns(map);
+}
+
+export function clearPendingRun(projectId: string, chapterId: string, sectionId: string): void {
+  const map = loadPendingRuns();
+  delete map[pendingKey(projectId, chapterId, sectionId)];
+  savePendingRuns(map);
+}
+
+/** 指定プロジェクトの進行中 run（古すぎる=30分超は自動で捨てる） */
+export function listPendingRuns(projectId: string): PendingRun[] {
+  const map = loadPendingRuns();
+  const now = Date.now();
+  const alive: Record<string, PendingRun> = {};
+  const out: PendingRun[] = [];
+  let changed = false;
+  for (const [k, r] of Object.entries(map)) {
+    const age = now - new Date(r.startedAt).getTime();
+    if (age > 30 * 60 * 1000) {
+      changed = true; // 期限切れは捨てる
+      continue;
+    }
+    alive[k] = r;
+    if (r.projectId === projectId) out.push(r);
+  }
+  if (changed) savePendingRuns(alive);
+  return out;
 }
 
 // ===== 参照ライブラリ（グローバル。プロジェクト横断）=====

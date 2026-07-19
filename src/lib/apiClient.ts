@@ -110,9 +110,14 @@ export type RunProgress = "starting" | "pending" | "running";
  * `startUrl` は `{ runId }` を返すルート。返り値 result はワークフローの returnValue
  * （各ワークフローの結果オブジェクト。呼び出し側で .ok を確認する）。
  */
-export async function startAndPollRun<T = any>(
-  startUrl: string,
-  body: unknown,
+/**
+ * 既に開始済みの run（runId）を完了までポーリングして returnValue を返す。
+ * タブ切替・アプリ内移動・リロードからの「復帰（resume）」でも使う。
+ * 背景タブで setTimeout が間引かれても、サーバ側の生成は継続しているため、
+ * 復帰時にこの関数を呼べば結果を回収できる。
+ */
+export async function pollRun<T = any>(
+  runId: string,
   opts: {
     onProgress?: (status: RunProgress) => void;
     intervalMs?: number;
@@ -120,14 +125,8 @@ export async function startAndPollRun<T = any>(
   } = {},
 ): Promise<{ ok: true; result: T } | { ok: false; error: string }> {
   const intervalMs = opts.intervalMs ?? 2000;
-  const timeoutMs = opts.timeoutMs ?? 6 * 60 * 1000; // クライアント側の上限（6分）
-  opts.onProgress?.("starting");
-
-  const startRes = await postJson<{ runId?: string }>(startUrl, body);
-  if (!startRes.ok) return { ok: false, error: startRes.error ?? "生成の開始に失敗しました。" };
-  const runId = startRes.data?.runId;
-  if (!runId) return { ok: false, error: "生成を開始できませんでした（runId を取得できませんでした）。" };
-
+  // 復帰前提なので長め（サーバ実行は独立。ここで諦めても pending は残せる）
+  const timeoutMs = opts.timeoutMs ?? 20 * 60 * 1000;
   const startedAt = Date.now();
   let notFoundStreak = 0;
   while (Date.now() - startedAt < timeoutMs) {
@@ -141,7 +140,7 @@ export async function startAndPollRun<T = any>(
     if (status === "failed") return { ok: false, error: s.data.error ?? "生成に失敗しました。" };
     if (s.data.notFound) {
       // 開始直後でまだ見えていない可能性。数回は待つ。
-      if (++notFoundStreak > 10) {
+      if (++notFoundStreak > 15) {
         return { ok: false, error: "生成タスクが見つかりませんでした。時間をおいて再試行してください。" };
       }
     } else {
@@ -151,6 +150,23 @@ export async function startAndPollRun<T = any>(
   }
   return {
     ok: false,
-    error: "生成が時間内に完了しませんでした。素材を短くするか、時間をおいて再試行してください。",
+    error: "生成が時間内に完了しませんでした。時間をおいて再試行してください。",
   };
+}
+
+export async function startAndPollRun<T = any>(
+  startUrl: string,
+  body: unknown,
+  opts: {
+    onProgress?: (status: RunProgress) => void;
+    intervalMs?: number;
+    timeoutMs?: number;
+  } = {},
+): Promise<{ ok: true; result: T } | { ok: false; error: string }> {
+  opts.onProgress?.("starting");
+  const startRes = await postJson<{ runId?: string }>(startUrl, body);
+  if (!startRes.ok) return { ok: false, error: startRes.error ?? "生成の開始に失敗しました。" };
+  const runId = startRes.data?.runId;
+  if (!runId) return { ok: false, error: "生成を開始できませんでした（runId を取得できませんでした）。" };
+  return pollRun<T>(runId, opts);
 }
