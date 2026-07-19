@@ -146,6 +146,8 @@ export type Project = {
   sectionAgentReports?: Record<string, AgentReportSummary[]>;
   /** 上と同じキー → ひとつ前の診断結果。再生成後の「解決済み」判定に使う */
   sectionAgentReportsPrev?: Record<string, AgentReportSummary[]>;
+  /** 「対応不要」にした指摘の安定ID（節key|agent|message|loc）。トリアージで除外される */
+  dismissedFindings?: string[];
 };
 
 export type ReviewResult = {

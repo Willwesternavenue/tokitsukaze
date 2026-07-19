@@ -103,6 +103,9 @@ function mergeDefaults(p: Project): Project {
     agentToggles: { ...((p as any).agentToggles || {}) },
     sectionAgentReports: { ...((p as any).sectionAgentReports || {}) },
     sectionAgentReportsPrev: { ...((p as any).sectionAgentReportsPrev || {}) },
+    dismissedFindings: Array.isArray((p as any).dismissedFindings)
+      ? (p as any).dismissedFindings
+      : [],
     references: Array.isArray((p as any).references) ? (p as any).references : [],
     glossary: Array.isArray((p as any).glossary) ? (p as any).glossary : [],
     screenplayMeta: (p as any).screenplayMeta ?? undefined,
@@ -500,6 +503,16 @@ export function saveSectionAgentReports(
     if (cur[sectionKey]) prev[sectionKey] = cur[sectionKey];
     cur[sectionKey] = reports;
     return { ...p, sectionAgentReports: cur, sectionAgentReportsPrev: prev };
+  });
+}
+
+/** 指摘の「対応不要（無視）」を切り替える。id は安定ID（節key|agent|message|loc） */
+export function setFindingDismissed(id: string, dismissed: boolean): Project {
+  return updateProject((p) => {
+    const set = new Set(p.dismissedFindings ?? []);
+    if (dismissed) set.add(id);
+    else set.delete(id);
+    return { ...p, dismissedFindings: [...set] };
   });
 }
 

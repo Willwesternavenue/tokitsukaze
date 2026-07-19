@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { loadProject } from "@/lib/storage";
+import { loadProject, setFindingDismissed } from "@/lib/storage";
 import { getGenreConfig } from "@/lib/genreConfig";
 import { agentLabel } from "@/lib/staffRegistry";
 import type { AgentFinding, AgentReportSummary, Project } from "@/lib/types";
@@ -49,6 +49,7 @@ const TIER_LABEL: Record<Tier, string> = {
 const TIER_ORDER: Tier[] = ["error", "warning", "info"];
 
 type FlatFinding = {
+  id: string; // 安定ID（節key|agent|message|loc）: 無視の永続化に使う
   tier: Tier;
   message: string;
   loc?: string;
@@ -141,6 +142,7 @@ export default function ReviewPage() {
       for (const r of s.reports) {
         for (const f of r.findings) {
           out.push({
+            id: `${s.key}|${r.agent}|${f.message}|${f.loc ?? ""}`,
             tier: f.severity,
             message: f.message,
             loc: f.loc,
@@ -161,11 +163,29 @@ export default function ReviewPage() {
     return out;
   }, [sections, project]);
 
+  const dismissedSet = useMemo(
+    () => new Set(project?.dismissedFindings ?? []),
+    [project],
+  );
+  const activeFindings = useMemo(
+    () => flatFindings.filter((f) => !dismissedSet.has(f.id)),
+    [flatFindings, dismissedSet],
+  );
+  const dismissedFindings = useMemo(
+    () => flatFindings.filter((f) => dismissedSet.has(f.id)),
+    [flatFindings, dismissedSet],
+  );
+
+  // Tier別件数は「無視していない指摘」で数える
   const tierCounts = useMemo(() => {
     const c: Record<Tier, number> = { error: 0, warning: 0, info: 0 };
-    for (const f of flatFindings) c[f.tier] += 1;
+    for (const f of activeFindings) c[f.tier] += 1;
     return c;
-  }, [flatFindings]);
+  }, [activeFindings]);
+
+  function dismiss(id: string, on: boolean) {
+    setProject(setFindingDismissed(id, on));
+  }
 
   if (!project) {
     return (
@@ -318,7 +338,7 @@ export default function ReviewPage() {
                     className={`triage-chip ${triageFilter === "all" ? "active" : ""}`}
                     onClick={() => setTriageFilter("all")}
                   >
-                    すべて {flatFindings.length}
+                    すべて {activeFindings.length}
                   </button>
                   {TIER_ORDER.map((t) => (
                     <button
@@ -332,22 +352,22 @@ export default function ReviewPage() {
                   ))}
                 </div>
                 {(() => {
-                  const list = flatFindings.filter(
+                  const list = activeFindings.filter(
                     (f) => triageFilter === "all" || f.tier === triageFilter,
                   );
                   if (list.length === 0) {
                     return (
                       <div className="empty-state">
                         {triageFilter === "all"
-                          ? "指摘はありません。"
+                          ? "対応が必要な指摘はありません。"
                           : `「${TIER_LABEL[triageFilter as Tier]}」の指摘はありません。`}
                       </div>
                     );
                   }
                   return (
                     <ul className="list-block">
-                      {list.map((f, i) => (
-                        <li key={i} className={`triage-item finding severity-${f.tier}`}>
+                      {list.map((f) => (
+                        <li key={f.id} className={`triage-item finding severity-${f.tier}`}>
                           <span className={`badge ${severityBadgeClass(f.tier)}`}>{TIER_LABEL[f.tier]}</span>
                           <div style={{ flex: 1 }}>
                             <div className="finding-message">{f.message}</div>
@@ -356,11 +376,41 @@ export default function ReviewPage() {
                               {f.loc ? <span>　「{f.loc}」</span> : null}
                             </div>
                           </div>
+                          <button
+                            type="button"
+                            className="btn sm ghost"
+                            title="この指摘を対応不要にする（トリアージから外す）"
+                            onClick={() => dismiss(f.id, true)}
+                          >
+                            対応不要
+                          </button>
                         </li>
                       ))}
                     </ul>
                   );
                 })()}
+
+                {dismissedFindings.length > 0 ? (
+                  <details className="dismissed-block" style={{ marginTop: 12 }}>
+                    <summary>無視した指摘（{dismissedFindings.length}）</summary>
+                    <ul className="list-block" style={{ marginTop: 8 }}>
+                      {dismissedFindings.map((f) => (
+                        <li key={f.id} className="triage-item" style={{ opacity: 0.7 }}>
+                          <span className="badge gray">{TIER_LABEL[f.tier]}</span>
+                          <div style={{ flex: 1 }}>
+                            <div className="finding-message">{f.message}</div>
+                            <div className="muted" style={{ fontSize: 11 }}>
+                              {f.agentLabel} ・ {f.chapterTitle} ／ {f.sectionTitle}
+                            </div>
+                          </div>
+                          <button type="button" className="btn sm" onClick={() => dismiss(f.id, false)}>
+                            戻す
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                ) : null}
               </div>
             </div>
           ) : null}
