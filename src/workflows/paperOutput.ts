@@ -80,19 +80,31 @@ async function preprintStep(input: PreprintInput, runId: string): Promise<Prepri
     paperMeta: input.paperMeta,
     summary: input.summary.slice(0, 24000),
   });
+  // AI層（generateJson）は常にJSON出力を強制するため、予稿もJSON {preprint} で受け取る。
+  // 生Markdownを期待すると、強制されたJSONがそのまま本文として保存されてしまう（＝JSONが出力される不具合）。
+  const formatNote = `\n\n出力は次のJSON形式（余計な文字は禁止。本文の改行は \\n でエスケープ）：\n${tpl.outputFormat}`;
   const result = await runAiStep(
     {
       messages: [
         { role: "system", content: tpl.systemPrompt },
-        { role: "user", content: userPrompt },
+        { role: "user", content: userPrompt + formatNote },
       ],
       maxTokens: 12000, // 4〜8ページ分の出力
       maxAttempts: 2,
     },
     (raw) => {
-      // JSONではなく本文（Markdown）をそのまま受け取る。コードフェンスがあれば外す
-      let text = (raw ?? "").trim();
-      text = text.replace(/^```(?:markdown|md)?\s*/i, "").replace(/```\s*$/, "").trim();
+      const parsed = safeJsonParse<{ preprint?: unknown }>(raw);
+      let text = parsed && typeof parsed.preprint === "string" ? parsed.preprint.trim() : "";
+      // 保険: JSONとして取れず、かつ生Markdownが直接返ったケースだけ救済する。
+      // JSONっぽい（`{`始まり）ものは採用しない＝JSONが本文に混入する不具合の再発を防ぎ、失敗扱いで再試行させる。
+      if (!text) {
+        const stripped = (raw ?? "")
+          .trim()
+          .replace(/^```(?:markdown|md)?\s*/i, "")
+          .replace(/```\s*$/, "")
+          .trim();
+        if (stripped && !stripped.startsWith("{")) text = stripped;
+      }
       if (text.length < 200) return null; // 極端に短い＝失敗
       return { preprint: text };
     },
