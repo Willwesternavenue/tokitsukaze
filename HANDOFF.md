@@ -90,6 +90,19 @@ translationMeta / paperMeta / referenceWorkIds / agentToggles / sectionAgentRepo
 参照ライブラリ選択時（全ジャンル）: 重複チェック / 一貫性チェック（過去作）。
 論文の引用安全ルール: 引用マーカー〔著者, 年〕は references 登録文献のみ。無ければ〔要出典〕（架空文献の生成禁止）。
 
+### 引用・参考文献の体裁（2026-07-19 追加）
+
+`src/lib/citation.ts`（純粋関数・AI不使用）に集約。`PaperMeta.citationStyle`（`apa`/`ieee`/`sist02`/`mla`、
+未設定は `apa`＝従来の〔著者, 年〕互換）で切替。UI は `/`（論文仕様パネル）のセレクタ。
+- **生成時**は全スタイル共通で本文に著者・年マーカー〔著者, 年〕を書かせる（`authorYearMarker`）。
+  `buildPaperContext` が各登録文献に **正確なマーカーを付記**して「これをそのままコピーせよ」と指示するため、
+  後段の置換キーとして厳密一致で使える。引用安全ルールと `citation-check` の突合は形式非依存で成立（レビューは変換前に走る）。
+- **Word出力時**（`exportProjectDocx`・論文のみ）: `applyInTextCitations` で本文マーカーをスタイル変換
+  （IEEE=出現順に決定論採番して [n]／MLA=年を落とし〔著者〕／APA・SIST02=そのまま）、末尾に `buildBibliography` で
+  参考文献リストを整形出力。**番号はAI任せにせず出現順で採番**（未引用文献は登録順で後置）。
+  マッチしないマーカーは改変しない（データ欠損回避）＝最悪でも本文は〔著者, 年〕のまま、一覧は常に正しい。
+- 単一セクションのWord出力（`exportSectionDocx`）は採番が全文依存のため変換しない（著者・年マーカーのまま）。
+
 ### 脚本モードのプロ向け機能（2026-07-07 追加）
 
 `src/lib/screenplay.ts` にすべて決定論的（AI不使用）な解析・変換を集約:
@@ -148,6 +161,10 @@ translationMeta / paperMeta / referenceWorkIds / agentToggles / sectionAgentRepo
 ## 最近の実装（新しい順）
 
 ### 2026-07-19 セッション（本番反映済み・全て main）
+- **引用・参考文献の体裁選択 + 参考文献リストのWord出力**（`src/lib/citation.ts`）: `PaperMeta.citationStyle`
+  （APA/IEEE/SIST02/MLA、未設定=apa互換）。`exportProjectDocx` 末尾に参考文献リスト（ぶら下げインデント）、
+  番号式（IEEE）は出現順で決定論採番し本文マーカーも `[n]` に変換、MLAは年を落とす。上の
+  「引用・参考文献の体裁」節を参照。← 下の★最優先タスクを実装したもの
 - **ニュース記事モード + 翻訳書モード**を本番投入（news / translation。別ブランチにあった実装を統合）
 - **脚本プロ5機能**: `src/lib/screenplay.ts`（Fountain出力 `buildFountain` / シーンボード `/board` /
   香盤表CSV `buildBreakdownCsv` / 実測尺 `measureRuntime` / キャラ出番分析）
@@ -172,14 +189,14 @@ translationMeta / paperMeta / referenceWorkIds / agentToggles / sectionAgentRepo
 0. **論文モード**（2026-07-13）: paper（IMRaD/AI・情報系/総説/人文社会の構成分岐、簡易査読、
    引用安全ルール、fact-check は「校閲・本文内整合」に表示名切替）。
    設計書: `docs/superpowers/specs/2026-07-13-paper-mode-design.md`
-1. **ニュース記事モード + 翻訳書モード**（2026-07-06）: news（見出し・リード整合/中立性エージェント、
+2. **ニュース記事モード + 翻訳書モード**（2026-07-06）: news（見出し・リード整合/中立性エージェント、
    newsMeta）と translation（原文取り込み→章分割→翻訳→対訳/Diff/用語/一括置換。上の特記事項参照）。
    設計書: `docs/superpowers/specs/2026-07-06-news-and-translation-modes-design.md`
-2. **小見出しの個別編集**（`10f29f7`）: /writer で小見出しを手動編集/AI修正/追加/削除 → 本文生成
-3. **構成の調整画面**（`935bb72`）: /outline/refine 追加。全体AI改善 + 章ごと修正 + 手動編集
-4. **アキカゼ出版AI 改名 + 参照ライブラリ**（`d2b4753`）: 過去作品を作品カルテ化して踏襲/重複/矛盾チェック
-5. ブログ / 脚本 / ビジネス書モード（`3604e49` / `49f66c5` / `8374d35`）
-6. 人物相関図（`9850f5e`）、ナビ再構成（`979cefd`）、小説モード（`9829780`）、多役化 P2（`05a6814`）、WDK/Neon 基盤 P1（`b37efd2`）
+3. **小見出しの個別編集**（`10f29f7`）: /writer で小見出しを手動編集/AI修正/追加/削除 → 本文生成
+4. **構成の調整画面**（`935bb72`）: /outline/refine 追加。全体AI改善 + 章ごと修正 + 手動編集
+5. **アキカゼ出版AI 改名 + 参照ライブラリ**（`d2b4753`）: 過去作品を作品カルテ化して踏襲/重複/矛盾チェック
+6. ブログ / 脚本 / ビジネス書モード（`3604e49` / `49f66c5` / `8374d35`）
+7. 人物相関図（`9850f5e`）、ナビ再構成（`979cefd`）、小説モード（`9829780`）、多役化 P2（`05a6814`）、WDK/Neon 基盤 P1（`b37efd2`）
 
 ## ストレージ設計判断（既に確定済み）
 
@@ -190,22 +207,17 @@ translationMeta / paperMeta / referenceWorkIds / agentToggles / sectionAgentRepo
 
 ## 次にやる候補（ロードマップ）
 
-### ★最優先: 参考文献・引用・出典の整備（論文モード）
-現状のギャップ（ユーザー指摘・2026-07-19）:
-- **参考文献リスト（bibliography）をWord出力していない**。`/references` の登録・文献カルテ・
-  引用安全ルール（登録文献のみ〔著者, 年〕許可・無いものは〔要出典〕）・`citation-check` はあるが、
-  **本文末尾に文献一覧が出ない**。→ `exportProjectDocx`/`exportPreprintDocx` の末尾に
-  「参考文献」章を追加し、`project.references` を整形出力する（論文のみ）。
-- **引用マーカーが〔著者, 年〕固定**（`prompt-draft-paper` にハードコード）。投稿先で形式が違う
-  （APA=著者(年)・IEEE=[1]番号・バンクーバー=上付き番号・和文誌の指定など）。
-  → `PaperMeta.citationStyle`（例: "author-year" | "numbered-ieee" | "apa" | "custom"）を追加し、
-     (1) 本文プロンプトの引用マーカー指示を切替、(2) 文献リストの整形をスタイル別に、(3) 番号式は
-     出現順に採番。フォーマットは選択式（`CITATION_STYLE_OPTIONS` を genreConfig に）。
-- 実装の骨子: `Reference` に `doi?`/`pages?` 等を必要に応じ追加 → `src/lib/citation.ts` に
-  スタイル別フォーマッタ（`formatBibliography(refs, style)` / `inStyleMarkerHint(style)`）→
-  docx の末尾に文献リスト → prompt に style を注入。番号式は本文の [n] とリストの対応を取る必要があり、
-  AIに任せず「登録順 or 出現順で採番」を決定論的にやるのが安全。
-- 参考: 立命館 図書館「引用・参考文献の書き方」等、和文の作法。**文献の実在確認はしない方針は維持**。
+### ✅ 完了: 参考文献・引用・出典の整備（論文モード、2026-07-19 実装）
+`src/lib/citation.ts` に実装済み（上の「引用・参考文献の体裁」節と「最近の実装」参照）。
+- `PaperMeta.citationStyle`（`apa`/`ieee`/`sist02`/`mla`、未設定=apa互換）＋ `/` にセレクタ
+- `exportProjectDocx`（本編）と `exportPreprintDocx`（予稿）両方の末尾に参考文献リスト（ぶら下げインデント）。
+  番号式（IEEE）は出現順で決定論採番、本文マーカーも `[n]` に変換（AIに採番させない）。MLAは年を落とす。
+- 生成時は全スタイル共通で著者年マーカーを書かせ、`buildPaperContext` が各文献に正確なマーカーを付記して
+  そのままコピーさせる（＝後段の厳密一致置換キー）。引用安全ルール・`citation-check` は無改修で成立。
+- **文献の実在確認はしない方針を維持**。
+- 残タスク候補: `Reference` への `doi?`/`pages?` 追加、バンクーバー（上付き番号）追加、学会別カスタム書式は
+  必要になれば。番号式の本文 `[n]` 変換は「AIが付記マーカーを正確にコピーする」前提（ズレると変換されず
+  〔著者, 年〕のまま残る安全設計）＝本番のAI生成で一度精度確認を。
 
 ### その他
 - **実用書モード**（検討中。手順検証エージェント）

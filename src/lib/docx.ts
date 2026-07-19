@@ -14,6 +14,11 @@ import {
 } from "docx";
 import { saveAs } from "file-saver";
 import type { Project, SectionDraft } from "./types";
+import {
+  applyInTextCitations,
+  buildBibliography,
+  DEFAULT_CITATION_STYLE,
+} from "./citation";
 import { getGenreConfig } from "./genreConfig";
 
 function heading(text: string, level: (typeof HeadingLevel)[keyof typeof HeadingLevel]): Paragraph {
@@ -26,6 +31,16 @@ function para(text: string, opts: { bold?: boolean } = {}): Paragraph {
 
 function spacer(): Paragraph {
   return new Paragraph({ children: [new TextRun("")] });
+}
+
+// 参考文献リストの1行。学術文献リスト標準のぶら下げインデント（2行目以降を字下げして
+// 番号/著者の頭を揃える）＋行間を少し詰める。単位は twip（480≒0.33インチ）。
+function bibliographyParagraph(text: string): Paragraph {
+  return new Paragraph({
+    children: [new TextRun({ text })],
+    indent: { left: 480, hanging: 480 },
+    spacing: { after: 80 },
+  });
 }
 
 function listBlock(title: string, items: string[]): Paragraph[] {
@@ -140,10 +155,12 @@ function buildTable(rows: string[][]): Table {
  * 本文（Markdownが混ざり得る）を Word 要素に変換する。
  * 見出し(#)・箇条書き(-)・**太字**・表(|…|) を書式化し、記号を残さない。
  */
-function bodyParagraphs(body: string): (Paragraph | Table)[] {
+function bodyParagraphs(body: string, transform?: (t: string) => string): (Paragraph | Table)[] {
   if (!body) return [para("（本文未生成）")];
   const out: (Paragraph | Table)[] = [];
-  const lines = body.replace(/\r\n?/g, "\n").split("\n");
+  // 論文モード: 引用マーカーのスタイル変換（〔著者, 年〕→[n] 等）を Markdown 解析より前に適用
+  const src = transform ? transform(body) : body;
+  const lines = src.replace(/\r\n?/g, "\n").split("\n");
   for (let idx = 0; idx < lines.length; idx++) {
     const raw = lines[idx];
     const line = raw.replace(/\s+$/, "");
@@ -196,11 +213,17 @@ function bodyParagraphs(body: string): (Paragraph | Table)[] {
  * 節の出力。既定は本文のみのクリーンな原稿。
  * includeNotes=true のときだけ編集メモ等の作業メモを付ける（校正用）。
  */
-function sectionParagraphs(draft: SectionDraft, includeNotes = false): (Paragraph | Table)[] {
+function sectionParagraphs(
+  draft: SectionDraft,
+  includeNotes = false,
+  transformBody?: (t: string) => string,
+): (Paragraph | Table)[] {
   const blocks: (Paragraph | Table)[] = [];
   blocks.push(heading(draft.sectionTitle, HeadingLevel.HEADING_2));
   // 本文冒頭にAIが付けた重複見出し（番号付き）を除去してから流す
-  blocks.push(...bodyParagraphs(stripLeadingDuplicateHeading(draft.body, draft.sectionTitle)));
+  blocks.push(
+    ...bodyParagraphs(stripLeadingDuplicateHeading(draft.body, draft.sectionTitle), transformBody),
+  );
   blocks.push(spacer());
   if (includeNotes) {
     blocks.push(...listBlock("編集メモ", draft.editorNotes));
@@ -269,6 +292,18 @@ export async function exportProjectDocx(project: Project, includeNotes = false):
     children.push(spacer());
   }
 
+  // 論文モード: 引用スタイルに応じて本文マーカーを変換し、末尾に参考文献リストを付ける。
+  // 番号式は全本文の連結を出現順の採番に使うため、先に全文を集める。
+  const paperRefs = isPaper ? project.references ?? [] : [];
+  const citationStyle = project.paperMeta?.citationStyle ?? DEFAULT_CITATION_STYLE;
+  const allBodyText = isPaper
+    ? project.generatedSections.map((d) => d.body).filter(Boolean).join("\n")
+    : "";
+  const transformBody =
+    isPaper && paperRefs.length > 0
+      ? (t: string) => applyInTextCitations(t, paperRefs, citationStyle, allBodyText)
+      : undefined;
+
   const outline = project.selectedOutline;
   if (!outline) {
     children.push(para("（構成案が未選択です。原稿生成画面で構成案を選んでください。）"));
@@ -289,7 +324,7 @@ export async function exportProjectDocx(project: Project, includeNotes = false):
           (d) => d.chapterId === chapter.id && d.sectionId === section.id,
         );
         if (draft) {
-          children.push(...sectionParagraphs(draft, includeNotes));
+          children.push(...sectionParagraphs(draft, includeNotes, transformBody));
         } else {
           children.push(heading(section.title, HeadingLevel.HEADING_2));
           children.push(para("（本文未生成）"));
@@ -297,6 +332,16 @@ export async function exportProjectDocx(project: Project, includeNotes = false):
         }
       }
     }
+  }
+
+  // 論文モード: 参考文献リスト（登録文献から決定論的に整形。ぶら下げインデントで体裁を揃える）
+  if (isPaper && paperRefs.length > 0) {
+    children.push(heading("参考文献", HeadingLevel.HEADING_1));
+    const entries = buildBibliography(paperRefs, citationStyle, allBodyText);
+    for (const entry of entries) {
+      children.push(bibliographyParagraph(entry));
+    }
+    children.push(spacer());
   }
 
   const doc = new Document({
@@ -406,7 +451,23 @@ export async function exportPreprintDocx(project: Project): Promise<void> {
     }
     children.push(spacer());
   }
-  children.push(...bodyParagraphs(preprint));
+  // 引用スタイルの本文マーカー変換＋末尾の参考文献リスト（本編 exportProjectDocx と体裁を揃える）。
+  // 番号式の採番は予稿本文そのものを出現順の基準にする。
+  const paperRefs = project.references ?? [];
+  const citationStyle = project.paperMeta?.citationStyle ?? DEFAULT_CITATION_STYLE;
+  const transformBody =
+    paperRefs.length > 0
+      ? (t: string) => applyInTextCitations(t, paperRefs, citationStyle, preprint)
+      : undefined;
+  children.push(...bodyParagraphs(preprint, transformBody));
+
+  if (paperRefs.length > 0) {
+    children.push(spacer());
+    children.push(heading("参考文献", HeadingLevel.HEADING_1));
+    for (const entry of buildBibliography(paperRefs, citationStyle, preprint)) {
+      children.push(bibliographyParagraph(entry));
+    }
+  }
 
   const doc = new Document({
     creator: "アキカゼ出版AI",
