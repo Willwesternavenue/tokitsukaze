@@ -88,14 +88,16 @@ export default function InterviewNotesPage() {
   function updatePaperField(patch: Partial<PaperMeta>) {
     setProject((prev) => {
       if (!prev) return prev;
+      // 既存の paperMeta を全フィールド引き継いでから patch を当てる。
+      // 個別列挙にすると新フィールド（abstract/preprint/citationStyle 等）を取りこぼし、
+      // 1フィールド更新で他が消えるため、スプレッドで保全する。
       const merged: PaperMeta = {
-        paperType: prev.paperMeta?.paperType ?? "empirical",
-        field: prev.paperMeta?.field ?? "",
-        researchQuestion: prev.paperMeta?.researchQuestion ?? "",
-        contributions: prev.paperMeta?.contributions ?? "",
-        venue: prev.paperMeta?.venue ?? "",
-        keywords: prev.paperMeta?.keywords,
-        citationStyle: prev.paperMeta?.citationStyle,
+        paperType: "empirical",
+        field: "",
+        researchQuestion: "",
+        contributions: "",
+        venue: "",
+        ...(prev.paperMeta ?? {}),
         ...patch,
       };
       const next = { ...prev, paperMeta: merged };
