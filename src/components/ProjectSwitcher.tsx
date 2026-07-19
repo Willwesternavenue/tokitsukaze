@@ -15,6 +15,7 @@ import {
   switchProject,
 } from "@/lib/storage";
 import { exportProjectToJson, importProjectFromFile } from "@/lib/projectIO";
+import { allGenres } from "@/lib/genreConfig";
 import type { Project } from "@/lib/types";
 
 function reloadApp(): void {
@@ -80,26 +81,15 @@ export function ProjectSwitcher(): JSX.Element {
       alert("プロジェクト名を入力してください。");
       return;
     }
-    const choice = window.prompt(
-      "モードを選択してください（番号を入力）:\n1 = 聞き書き（自伝・人物伝）\n2 = 小説\n3 = ビジネス書\n4 = 脚本\n5 = ブログ記事\n6 = ニュース記事\n7 = 翻訳書",
-      "1",
-    );
+    // モード一覧は genreConfig の登録順から動的生成（新モード追加時にここは触らない）
+    const menu = allGenres.map((g, i) => `${i + 1} = ${g.label}`).join("\n");
+    const choice = window.prompt(`モードを選択してください（番号を入力）:\n${menu}`, "1");
     if (choice === null) return;
-    const c = choice.trim();
+    const idx = Number(choice.trim()) - 1;
     const genre =
-      c === "2"
-        ? ("novel" as const)
-        : c === "3"
-          ? ("business" as const)
-          : c === "4"
-            ? ("screenplay" as const)
-            : c === "5"
-              ? ("blog" as const)
-              : c === "6"
-                ? ("news" as const)
-                : c === "7"
-                  ? ("translation" as const)
-                  : ("biography" as const);
+      Number.isInteger(idx) && idx >= 0 && idx < allGenres.length
+        ? allGenres[idx].genre
+        : allGenres[0].genre;
     createProject(trimmed, { withSample: false, genre });
     setOpen(false);
     reloadApp();

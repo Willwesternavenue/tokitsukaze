@@ -4,7 +4,7 @@
 
 ## これは何か
 
-自費出版会社向けの **AI編集システム**（当初「聞き書き出版AI」→ 7ジャンル対応に育ち「アキカゼ出版AI」に改名）。
+自費出版会社向けの **AI編集システム**（当初「聞き書き出版AI」→ 8ジャンル対応に育ち「アキカゼ出版AI」に改名）。
 取材メモ／プロット等の素材から、構成案 → 小見出し → 本文を生成し、複数の AI エージェントが
 校正・整合性・読者体験などをレビューする。デモ／商談用。
 
@@ -84,7 +84,7 @@ translationMeta / paperMeta / referenceWorkIds / agentToggles / sectionAgentRepo
 | blog（ブログ記事） | ネタ・キーワード | キーワード・ペルソナ | 校閲/SEO |
 | news（ニュース記事） | 取材素材・一次情報 | 取材源・出典(/references流用) | 校閲/見出し・リード整合/中立性・両論 |
 | translation（翻訳書） | 原文(docx/pdf/貼付) | 対訳表・用語(/terms) | 訳抜け/用語統一/表記揺れ |
-| paper（論文） | 研究素材 | 参考文献・用語集(/references流用) | 簡易査読/論理構成/出典/校閲・本文内整合 |
+| paper（論文） | 研究素材 | 参考文献・文献カルテ(/references) + 要旨・予稿 | 簡易査読/論理構成/出典/校閲・本文内整合 |
 
 共通レビュアー: 校正 / 文体守護 / 整合性 / 読者体験（翻訳書では整合性・読者体験はスキップ）。
 参照ライブラリ選択時（全ジャンル）: 重複チェック / 一貫性チェック（過去作）。
@@ -160,10 +160,33 @@ translationMeta / paperMeta / referenceWorkIds / agentToggles / sectionAgentRepo
 
 ## 最近の実装（新しい順）
 
-0. **引用・参考文献の体裁選択**（2026-07-19）: `PaperMeta.citationStyle`（APA/IEEE/SIST02/MLA）。
-   `src/lib/citation.ts` に決定論フォーマッタ、Word末尾に参考文献リスト出力、番号式は出現順で自動採番。
-   上記「引用・参考文献の体裁」節を参照。
-1. **論文モード**（2026-07-13）: paper（IMRaD/AI・情報系/総説/人文社会の構成分岐、簡易査読、
+### 2026-07-19 セッション（本番反映済み・全て main）
+- **引用・参考文献の体裁選択 + 参考文献リストのWord出力**（`src/lib/citation.ts`）: `PaperMeta.citationStyle`
+  （APA/IEEE/SIST02/MLA、未設定=apa互換）。`exportProjectDocx` 末尾に参考文献リスト（ぶら下げインデント）、
+  番号式（IEEE）は出現順で決定論採番し本文マーカーも `[n]` に変換、MLAは年を落とす。上の
+  「引用・参考文献の体裁」節を参照。← 下の★最優先タスクを実装したもの
+- **ニュース記事モード + 翻訳書モード**を本番投入（news / translation。別ブランチにあった実装を統合）
+- **脚本プロ5機能**: `src/lib/screenplay.ts`（Fountain出力 `buildFountain` / シーンボード `/board` /
+  香盤表CSV `buildBreakdownCsv` / 実測尺 `measureRuntime` / キャラ出番分析）
+- **グローバル対訳表**（`akikaze:termsets:v1` + `Project.termSetIds`、`effectiveTermPairs` でマージ）
+- **合言葉ゲート**: `src/middleware.ts` + `src/lib/gate.ts`。env `STAFF_PASSCODE`/`GUEST_PASSCODE`/`GATE_SECRET`
+  未設定なら無効（＝公開）。Cookie 90日。**本番はまだenv未設定＝公開中**
+- **論文モード**を本番統合＋大幅強化:
+  - 生成の**再開耐性**: 本文生成を runId即返し→ポーリングに統一（`pollRun`/`startSectionDraft`/`finishSectionDraft`、
+    `akikaze:pendingRuns:v1` で復帰）。タブ切替・移動・リロード・300s制限に強い
+  - **レビュー重要度トリアージ**（/review「重要度順」タブ）＋**指摘のIgnore**（`Project.dismissedFindings`）
+  - **節数肥大バグ修正**: `slimProjectForDraft` を全モードで軽量化（他節本文を先頭要約に・診断結果を送らない）。
+    論文で26節以降に生成が連発失敗していた主因
+  - **Word出力の整備**: 作業メモ抜きのクリーン原稿（`includeNotes`）/「メモ付きWord」ボタン/
+    Markdown整形（見出し・箇条書き・太字・**表→Word表**）/ 見出し二重化の除去（`stripLeadingDuplicateHeading`）/
+    論文ラベル修正（著者・第N章なし）
+  - **要旨・予稿**: `PaperMeta.abstract`/`preprint`。`prompt-abstract-paper`/`prompt-preprint-paper`、
+    `src/workflows/paperOutput.ts` + `/api/generate-abstract`・`/api/generate-preprint`、
+    `src/lib/paperClient.ts`（各節抜粋だけ送る）。素材画面「要旨・予稿」パネル、`exportPreprintDocx`
+  - **文献カルテ**: `/references` を論文用に格上げ（`Reference.card` = 目的/手法/結果/貢献/限界/差分、
+    PDF取込 `/api/extract-reference-card`）。論文では fiction 参照ライブラリを外す
+
+0. **論文モード**（2026-07-13）: paper（IMRaD/AI・情報系/総説/人文社会の構成分岐、簡易査読、
    引用安全ルール、fact-check は「校閲・本文内整合」に表示名切替）。
    設計書: `docs/superpowers/specs/2026-07-13-paper-mode-design.md`
 2. **ニュース記事モード + 翻訳書モード**（2026-07-06）: news（見出し・リード整合/中立性エージェント、
@@ -184,8 +207,24 @@ translationMeta / paperMeta / referenceWorkIds / agentToggles / sectionAgentRepo
 
 ## 次にやる候補（ロードマップ）
 
+### ✅ 完了: 参考文献・引用・出典の整備（論文モード、2026-07-19 実装）
+`src/lib/citation.ts` に実装済み（上の「引用・参考文献の体裁」節と「最近の実装」参照）。
+- `PaperMeta.citationStyle`（`apa`/`ieee`/`sist02`/`mla`、未設定=apa互換）＋ `/` にセレクタ
+- `exportProjectDocx`（本編）と `exportPreprintDocx`（予稿）両方の末尾に参考文献リスト（ぶら下げインデント）。
+  番号式（IEEE）は出現順で決定論採番、本文マーカーも `[n]` に変換（AIに採番させない）。MLAは年を落とす。
+- 生成時は全スタイル共通で著者年マーカーを書かせ、`buildPaperContext` が各文献に正確なマーカーを付記して
+  そのままコピーさせる（＝後段の厳密一致置換キー）。引用安全ルール・`citation-check` は無改修で成立。
+- **文献の実在確認はしない方針を維持**。
+- 残タスク候補: `Reference` への `doi?`/`pages?` 追加、バンクーバー（上付き番号）追加、学会別カスタム書式は
+  必要になれば。番号式の本文 `[n]` 変換は「AIが付記マーカーを正確にコピーする」前提（ズレると変換されず
+  〔著者, 年〕のまま残る安全設計）＝本番のAI生成で一度精度確認を。
+
+### その他
 - **実用書モード**（検討中。手順検証エージェント）
-- **全文RAG**（Phase B。Vercel Blob + Neon pgvector。過去作の逐語セリフ矛盾検出など）
+- **予稿の分量調整 / LaTeX出力**（arXiv・国際学会向け。予稿はドラフト、LaTeXテンプレへ流し込む運用）
+- **投稿種別で最初から短く生成**（②-B。PaperMetaに投稿種別→章数・節分量を切替）
+- **研究素材そのもののアップロード**（案A。`/api/extract-source` 流用で研究素材欄に追記）
+- **全文RAG**（Phase B。Vercel Blob + Neon pgvector）
 - P6 通しレビュー（`/review` の「全体レビューを実行」は現状 disabled）
 - Neon への参照ライブラリ mirror（別端末同期が要るとき。今は JSON エクスポートで移行）
 
@@ -206,8 +245,19 @@ npx workflow web            # WDK 実行の可視化
 
 ## ハマりどころ（既知）
 
+- **Node版**: このマシンの Claude Desktop は起動時PATHをキャッシュし、しばしば v18 で走る。
+  `next build`/dev が `Unexpected token 'with'` や `@swc/core: Failed to load native binding` で落ちたら
+  node が古いサイン。**v24.15.0 で通る**（`nvm alias default` は 24 済み。ビルドは
+  `source ~/.nvm/nvm.sh && nvm use 24.15.0` を前置）。`.claude/launch.json`（gitignore）は
+  v24 の絶対パス直指定にしてある。詳細はメモリ `desktop-node-version-path`
+- **合言葉ゲート**: env未設定なら無効＝本番は公開中。閉じるなら Vercel に
+  `STAFF_PASSCODE`/`GUEST_PASSCODE`/`GATE_SECRET` を設定して再デプロイ
+- **AI生成のローカル検証不可**: ローカルに ANTHROPIC/OPENAI キーが無いため、実生成E2Eは未実施が多い。
+  プラミング（runId返却・pending保存・docx中身）は検証済み。**本番で要確認**（特に要旨/予稿/文献カルテ抽出）
+- **ブラウザ検証の実docx確認手法**: `URL.createObjectURL` をフックしてBlob捕捉→ZIP手動パース→
+  `deflate-raw` で `word/document.xml` を展開して文字列検査（このセッションで多用）
 - Anthropic prefill は Sonnet 4.6 で 400 → 使わない（system prompt で JSON 強制 + リトライ）
 - `.env.local` 変更は dev サーバ再起動が必要
-- Vercel body 制限 4.5MB → 参照ライブラリの大きい PDF は UI で注意喚起済み
-- `mammoth`/`unpdf` の serverless 動作は要実機確認（デプロイ後 /library で docx を1つ試すのが確認手順）
-- `/` 素材入力の interviewNotes 空チェックが全ジャンルに効く（ブログ等でも「取材メモが空」表示になる小さな癖・未修正）
+- Vercel body 制限 4.5MB → 本文生成は `slimProjectForDraft` で軽量化（全モード）。論文で節が増えても頭打ち
+- `mammoth`/`unpdf` の serverless 動作は要実機確認
+- `/` 素材入力の interviewNotes 空チェックが全ジャンルに効く（小さな癖・未修正）

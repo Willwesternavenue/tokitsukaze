@@ -17,8 +17,12 @@ import {
   LANGUAGE_OPTIONS,
   WORK_TYPE_OPTIONS,
   PAPER_TYPE_OPTIONS,
+  PAPER_STYLE_OPTIONS,
 } from "@/lib/genreConfig";
 import { CITATION_STYLE_OPTIONS, type CitationStyle } from "@/lib/citation";
+import { PAPER_TEMPLATES, buildPaperOutline, paperTemplateById } from "@/lib/paperTemplates";
+import { generateAbstract, generatePreprint } from "@/lib/paperClient";
+import { exportPreprintDocx } from "@/lib/docx";
 import type {
   LangCode,
   NewsType,
@@ -46,6 +50,11 @@ export default function InterviewNotesPage() {
   const [extracting, setExtracting] = useState(false);
   const [chapterPreview, setChapterPreview] = useState<SourceChapter[] | null>(null);
   const [segmentChars, setSegmentChars] = useState(2000);
+  // 論文モード: 構成テンプレート選択
+  const [paperTemplateId, setPaperTemplateId] = useState("");
+  // 論文モード: 要旨・予稿の生成状態
+  const [abstractGen, setAbstractGen] = useState(false);
+  const [preprintGen, setPreprintGen] = useState(false);
 
   useEffect(() => {
     setProject(loadProject());
@@ -105,6 +114,113 @@ export default function InterviewNotesPage() {
     setInfo(null);
     // 章立て生成の前に、AIが確認する事前ヒアリング画面へ
     router.push("/outline/interview");
+  }
+
+  // 論文モード: 選んだテンプレートから章立てを即確定して構成調整へ
+  function handleUsePaperTemplate() {
+    if (!project) return;
+    const tpl = paperTemplateById(paperTemplateId);
+    if (!tpl) {
+      setError("構成テンプレートを選んでください。");
+      return;
+    }
+    if (
+      project.selectedOutline &&
+      project.generatedSections.length > 0 &&
+      !confirm("既に執筆済みの本文があります。構成を作り直すと既存の本文は表示されなくなります。続行しますか？")
+    ) {
+      return;
+    }
+    const outline = buildPaperOutline(tpl, project.paperMeta, project.theme);
+    const next = updateProject((p) => ({
+      ...p,
+      outlineProposals: [outline],
+      selectedOutline: outline,
+      writingMemory: {
+        ...p.writingMemory,
+        selectedOutlineSummary: `${outline.title}：${outline.concept}`,
+      },
+    }));
+    setProject(next);
+    // 既存フローに合流: 構成調整（章の増減・順序・小見出し生成）→ 執筆
+    router.push("/outline/refine");
+  }
+
+  // 論文モード: 要旨（アブストラクト）をAI生成
+  async function handleGenerateAbstract() {
+    if (!project) return;
+    if (project.generatedSections.length === 0) {
+      setError("先に本文を生成してください（要旨は本文の要点から作られます）。");
+      return;
+    }
+    setError(null);
+    setInfo(null);
+    setAbstractGen(true);
+    try {
+      const { abstract, keywords } = await generateAbstract(project);
+      const next = updateProject((p) => ({
+        ...p,
+        paperMeta: {
+          paperType: p.paperMeta?.paperType ?? "empirical",
+          field: p.paperMeta?.field ?? "",
+          researchQuestion: p.paperMeta?.researchQuestion ?? "",
+          contributions: p.paperMeta?.contributions ?? "",
+          venue: p.paperMeta?.venue ?? "",
+          ...p.paperMeta,
+          abstract,
+          // キーワード未入力なら提案で埋める（既存があれば尊重）
+          keywords: p.paperMeta?.keywords?.trim() ? p.paperMeta.keywords : keywords,
+        },
+      }));
+      setProject(next);
+      setInfo("要旨を生成しました。内容を確認・編集してください。");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAbstractGen(false);
+    }
+  }
+
+  // 論文モード: 予稿（4〜8p の短縮版）をAI生成
+  async function handleGeneratePreprint() {
+    if (!project) return;
+    if (project.generatedSections.length === 0) {
+      setError("先に本文を生成してください（予稿はフル原稿を圧縮して作られます）。");
+      return;
+    }
+    setError(null);
+    setInfo(null);
+    setPreprintGen(true);
+    try {
+      const preprint = await generatePreprint(project);
+      const next = updateProject((p) => ({
+        ...p,
+        paperMeta: {
+          paperType: p.paperMeta?.paperType ?? "empirical",
+          field: p.paperMeta?.field ?? "",
+          researchQuestion: p.paperMeta?.researchQuestion ?? "",
+          contributions: p.paperMeta?.contributions ?? "",
+          venue: p.paperMeta?.venue ?? "",
+          ...p.paperMeta,
+          preprint,
+        },
+      }));
+      setProject(next);
+      setInfo("予稿を生成しました。内容を確認・編集し、「予稿Wordを出力」で書き出せます。");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPreprintGen(false);
+    }
+  }
+
+  async function handleExportPreprint() {
+    if (!project) return;
+    try {
+      await exportPreprintDocx(project);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
   }
 
   function handleReset() {
@@ -210,7 +326,7 @@ export default function InterviewNotesPage() {
               onClick={handleGenerateOutline}
               type="button"
             >
-              章立て案を生成する →
+              {project.genre === "paper" ? "AIに構成を提案させる →" : "章立て案を生成する →"}
             </button>
           ) : null}
         </div>
@@ -268,14 +384,51 @@ export default function InterviewNotesPage() {
             </div>
             <div className="field">
               <label htmlFor="proj-tone">文体の希望</label>
-              <input
-                id="proj-tone"
-                type="text"
-                className="input"
-                value={project.desiredTone}
-                onChange={(e) => updateField("desiredTone", e.target.value)}
-                placeholder="例：落ち着いた人物伝風。誠実で読みやすい語り口。"
-              />
+              {project.genre === "paper" ? (
+                <>
+                  <select
+                    id="proj-tone"
+                    className="input"
+                    value={
+                      PAPER_STYLE_OPTIONS.some((o) => o.value === project.desiredTone)
+                        ? project.desiredTone
+                        : project.desiredTone
+                          ? "__custom__"
+                          : ""
+                    }
+                    onChange={(e) => {
+                      if (e.target.value === "__custom__") return; // 現在の自由記述を保持
+                      updateField("desiredTone", e.target.value);
+                    }}
+                  >
+                    {/* 既存の自由記述（他モードからの引き継ぎ等）があれば失わないよう温存 */}
+                    {project.desiredTone &&
+                    !PAPER_STYLE_OPTIONS.some((o) => o.value === project.desiredTone) ? (
+                      <option value="__custom__">
+                        現在の指定: {project.desiredTone.slice(0, 24)}
+                        {project.desiredTone.length > 24 ? "…" : ""}
+                      </option>
+                    ) : null}
+                    {PAPER_STYLE_OPTIONS.map((o) => (
+                      <option key={o.label} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="help">
+                    学術論文の文体はほぼ定型のため選択式です。想定投稿先・読者は下の「論文仕様」で別途指定できます。
+                  </p>
+                </>
+              ) : (
+                <input
+                  id="proj-tone"
+                  type="text"
+                  className="input"
+                  value={project.desiredTone}
+                  onChange={(e) => updateField("desiredTone", e.target.value)}
+                  placeholder="例：全体のトーン・語り口の希望（任意）"
+                />
+              )}
             </div>
           </div>
           {project.genre === "blog" ? (
@@ -647,25 +800,33 @@ export default function InterviewNotesPage() {
           ) : null}
           <div className="field-row">
             <div className="field">
-              <label htmlFor="proj-theme">本にしたいテーマ</label>
+              <label htmlFor="proj-theme">
+                {project.genre === "paper" ? "研究テーマ・仮タイトル" : "本にしたいテーマ"}
+              </label>
               <input
                 id="proj-theme"
                 type="text"
                 className="input"
                 value={project.theme}
                 onChange={(e) => updateField("theme", e.target.value)}
+                placeholder={
+                  project.genre === "paper" ? "例：日本語BERTの固有表現抽出への適用" : undefined
+                }
               />
             </div>
-            <div className="field">
-              <label htmlFor="proj-reader">想定読者</label>
-              <input
-                id="proj-reader"
-                type="text"
-                className="input"
-                value={project.targetReader}
-                onChange={(e) => updateField("targetReader", e.target.value)}
-              />
-            </div>
+            {/* 論文モードは「想定読者」を論文仕様の「想定投稿先・読者」に一本化（重複回避） */}
+            {project.genre !== "paper" ? (
+              <div className="field">
+                <label htmlFor="proj-reader">想定読者</label>
+                <input
+                  id="proj-reader"
+                  type="text"
+                  className="input"
+                  value={project.targetReader}
+                  onChange={(e) => updateField("targetReader", e.target.value)}
+                />
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
@@ -818,6 +979,117 @@ export default function InterviewNotesPage() {
       </div>
       )}
 
+      {project.genre === "paper" ? (
+        <div className="panel">
+          <div className="panel-header">
+            <h2>構成の作り方</h2>
+            <span className="hint">テンプレートから選ぶ／AIに提案させる</span>
+          </div>
+          <div className="panel-body">
+            <div className="field" style={{ marginBottom: 12 }}>
+              <label htmlFor="paper-template">構成テンプレート</label>
+              <select
+                id="paper-template"
+                className="input"
+                value={paperTemplateId}
+                onChange={(e) => setPaperTemplateId(e.target.value)}
+              >
+                <option value="">選択してください…</option>
+                {PAPER_TEMPLATES.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.label}
+                    {t.recommendedFor === project.paperMeta?.paperType ? "（種別に最適）" : ""}
+                  </option>
+                ))}
+              </select>
+              {paperTemplateId ? (
+                <p className="help">
+                  章立て：
+                  {paperTemplateById(paperTemplateId)?.roles.map((r) => r.title).join(" → ")}
+                </p>
+              ) : (
+                <p className="help">
+                  論文の構成はほぼ定型です。テンプレートを選ぶと章立てが即確定します（AIの生成待ちなし）。
+                  素材が固まっていない段階では右上の「AIに構成を提案させる」で3案から選べます。
+                </p>
+              )}
+            </div>
+            <button
+              className="btn primary"
+              type="button"
+              onClick={handleUsePaperTemplate}
+              disabled={!paperTemplateId}
+            >
+              このテンプレで構成を作成 →
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {project.genre === "paper" ? (
+        <div className="panel">
+          <div className="panel-header">
+            <h2>要旨・予稿（投稿用）</h2>
+            <span className="hint">本文の要点から生成します</span>
+          </div>
+          <div className="panel-body">
+            {/* 要旨 */}
+            <div className="field" style={{ marginBottom: 8 }}>
+              <div className="flex between" style={{ alignItems: "center" }}>
+                <label htmlFor="paper-abstract">要旨（アブストラクト）</label>
+                <button className="btn sm" type="button" onClick={handleGenerateAbstract} disabled={abstractGen}>
+                  {abstractGen ? <span className="spinner" /> : null}
+                  {abstractGen ? "生成中…" : "AIで生成"}
+                </button>
+              </div>
+              <textarea
+                id="paper-abstract"
+                className="input"
+                rows={5}
+                value={project.paperMeta?.abstract ?? ""}
+                onChange={(e) => updatePaperField({ abstract: e.target.value })}
+                placeholder="300〜500字の要旨。「AIで生成」で本文の要点から作成できます（編集可）。"
+              />
+              <p className="help">要旨とキーワードは「全体Wordを出力」の先頭に載ります。</p>
+            </div>
+
+            {/* 予稿 */}
+            <div className="field" style={{ marginTop: 12 }}>
+              <div className="flex between" style={{ alignItems: "center" }}>
+                <label htmlFor="paper-preprint">予稿（研究会・学会向けの短縮版・4〜8ページ）</label>
+                <div className="row-actions" style={{ gap: 8 }}>
+                  <button className="btn sm" type="button" onClick={handleGeneratePreprint} disabled={preprintGen}>
+                    {preprintGen ? <span className="spinner" /> : null}
+                    {preprintGen ? "生成中…" : "AIで生成（4〜8p）"}
+                  </button>
+                  <button
+                    className="btn sm primary"
+                    type="button"
+                    onClick={handleExportPreprint}
+                    disabled={!project.paperMeta?.preprint?.trim()}
+                    title="予稿をWordで書き出す"
+                  >
+                    予稿Wordを出力
+                  </button>
+                </div>
+              </div>
+              <textarea
+                id="paper-preprint"
+                className="input mono"
+                rows={12}
+                value={project.paperMeta?.preprint ?? ""}
+                onChange={(e) => updatePaperField({ preprint: e.target.value })}
+                placeholder="フル原稿を圧縮した予稿（Markdown）。「AIで生成」で作成→編集→「予稿Wordを出力」。"
+              />
+              <p className="help">
+                フル原稿（全体Word）はそのまま残ります。予稿は投稿先のページ数（研究会4〜8p／国際学会8〜10p）に合わせた短縮版です。
+                ページ厳守やLaTeX指定の投稿先では、この予稿を下書きとして各テンプレートに流し込んでください。
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <div className="panel">
         <div className="panel-header">
           <h2>次のステップ</h2>
@@ -828,6 +1100,12 @@ export default function InterviewNotesPage() {
               <li>原文を取り込み「章に分割する」→ プレビューを確認して「この分割で確定」。</li>
               <li>翻訳画面でセグメントを選び「このセグメントを翻訳」。訳抜け・用語統一・表記揺れをAIが自動チェックします。</li>
               <li>対訳表・用語（ナレッジ）で訳語を確定すると、以降の翻訳とチェックに反映されます。対訳・差分ビューや一括置換も翻訳画面と対訳表画面から使えます。</li>
+            </ol>
+          ) : project.genre === "paper" ? (
+            <ol style={{ margin: 0, paddingLeft: 20, color: "var(--text-soft)", fontSize: 12 }}>
+              <li>研究素材と論文仕様（種別・分野・RQ・貢献・投稿先）を入力します。</li>
+              <li>「構成の作り方」でテンプレートを選ぶと章立てが即確定。迷う場合は「AIに構成を提案させる」で3案から選べます。</li>
+              <li>構成調整で章の増減・順序を整え、小見出しを生成 → 執筆。本文生成後に簡易査読・論理・出典・校閲の診断が付きます（査読通過を保証するものではありません）。</li>
             </ol>
           ) : (
             <ol style={{ margin: 0, paddingLeft: 20, color: "var(--text-soft)", fontSize: 12 }}>

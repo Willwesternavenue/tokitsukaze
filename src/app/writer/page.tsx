@@ -4,13 +4,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   addSectionToChapter,
+  clearPendingRun,
   effectiveTermPairs,
+  listPendingRuns,
   loadProject,
   loadPrompts,
   removeSectionFromOutline,
   replaceDraftBody,
   replaceSelectedOutline,
   saveSectionAgentReports,
+  setPendingRun,
   setSectionLocked,
   updateSectionInOutline,
   upsertDraft,
@@ -30,7 +33,12 @@ import { postJson, startAndPollRun } from "@/lib/apiClient";
 import type { SectionsWorkflowResult } from "@/workflows/sections";
 import { buildScreenplayExtraContext, getGenreConfig } from "@/lib/genreConfig";
 import { diffLines, diffStats } from "@/lib/diff";
-import { generateSectionDraft, listUntranslated } from "@/lib/translationClient";
+import {
+  finishSectionDraft,
+  generateSectionDraft,
+  listUntranslated,
+  startSectionDraft,
+} from "@/lib/translationClient";
 import { buildFountain, measureRuntime } from "@/lib/screenplay";
 import { saveAs } from "file-saver";
 
@@ -79,6 +87,9 @@ export default function WriterPage() {
   // 翻訳書モード: 一括翻訳
   const [batch, setBatch] = useState<BatchState | null>(null);
   const batchCancelRef = useRef(false);
+  // 生成の復帰（タブ切替・移動・リロード対策）: 進行中/復帰中の runId を追跡
+  const activePollsRef = useRef<Set<string>>(new Set());
+  const [resumingKeys, setResumingKeys] = useState<string[]>([]);
 
   useEffect(() => {
     const p = loadProject();
@@ -88,7 +99,47 @@ export default function WriterPage() {
       const firstSection = firstChapter.sections?.[0];
       if (firstSection) setSelected({ chapter: firstChapter, section: firstSection });
     }
+    // 進行中の生成があれば復帰（前回タブを閉じた/移動した/リロードした場合）
+    resumePendingRuns(p.id);
+    // 復帰後にタブに戻ってきたら即再ポーリング（背景タブの間引き対策）
+    const onVis = () => {
+      if (document.visibilityState === "visible") {
+        const cur = loadProject();
+        resumePendingRuns(cur.id);
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 進行中 run を完了までポーリングして結果を適用する（多重ポーリングは runId で抑止）
+  function pollAndApply(runId: string, chapterId: string, sectionId: string, projectId: string) {
+    if (activePollsRef.current.has(runId)) return;
+    activePollsRef.current.add(runId);
+    const key = `${chapterId}::${sectionId}`;
+    setResumingKeys((prev) => (prev.includes(key) ? prev : [...prev, key]));
+    finishSectionDraft(runId)
+      .then((next) => {
+        clearPendingRun(projectId, chapterId, sectionId);
+        setProject(next);
+      })
+      .catch((e) => {
+        // 失敗（サーバ側failed等）は pending を消す。一時的な取得失敗は次回訪問で再試行される
+        clearPendingRun(projectId, chapterId, sectionId);
+        setError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        activePollsRef.current.delete(runId);
+        setResumingKeys((prev) => prev.filter((k) => k !== key));
+      });
+  }
+
+  function resumePendingRuns(projectId: string) {
+    for (const pr of listPendingRuns(projectId)) {
+      pollAndApply(pr.runId, pr.chapterId, pr.sectionId, projectId);
+    }
+  }
 
   // 選択セグメントが変わったら翻訳モードの編集・Diff状態をリセット
   useEffect(() => {
@@ -202,11 +253,30 @@ export default function WriterPage() {
     if (!project || !selected) return;
     setError(null);
     setLoading(true);
+    const { chapter, section } = selected;
     try {
-      // 生成 → 保存 → 診断永続化（翻訳書では旧訳文を bodyHistory に退避）は共通ヘルパで行う
-      const next = await generateSectionDraft(project, selected.chapter, selected.section);
-      setProject(next);
+      // 開始→runId保存（タブを閉じても復帰で回収できる）→完了までポーリング→適用
+      const runId = await startSectionDraft(project, chapter, section);
+      setPendingRun({
+        projectId: project.id,
+        chapterId: chapter.id,
+        sectionId: section.id,
+        chapterTitle: chapter.title,
+        sectionTitle: section.title,
+        runId,
+        startedAt: new Date().toISOString(),
+      });
+      activePollsRef.current.add(runId);
+      try {
+        const next = await finishSectionDraft(runId);
+        setProject(next);
+      } finally {
+        activePollsRef.current.delete(runId);
+      }
+      clearPendingRun(project.id, chapter.id, section.id);
     } catch (e) {
+      // ここに来るのは開始失敗 or サーバfailed。pending は残さない（残すと復帰で再失敗ループ）
+      clearPendingRun(project.id, chapter.id, section.id);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
@@ -500,11 +570,11 @@ export default function WriterPage() {
     }
   }
 
-  async function handleExportSection() {
+  async function handleExportSection(includeNotes = false) {
     if (!project || !currentDraft) return;
     setExporting(true);
     try {
-      await exportSectionDocx(project, currentDraft);
+      await exportSectionDocx(project, currentDraft, includeNotes);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -512,7 +582,7 @@ export default function WriterPage() {
     }
   }
 
-  async function handleExportAll() {
+  async function handleExportAll(includeNotes = false) {
     if (!project) return;
     if (project.generatedSections.length === 0) {
       setError("Word出力対象の本文がありません。先に本文を生成してください。");
@@ -520,7 +590,7 @@ export default function WriterPage() {
     }
     setExporting(true);
     try {
-      await exportProjectDocx(project);
+      await exportProjectDocx(project, includeNotes);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -614,14 +684,30 @@ export default function WriterPage() {
               Fountainで出力
             </button>
           ) : null}
-          <button className="btn" onClick={handleExportAll} disabled={exporting} type="button">
+          <button className="btn" onClick={() => handleExportAll(false)} disabled={exporting} type="button">
             {exporting ? <span className="spinner" /> : null}
             {isTranslation ? "訳文Wordを出力" : "全体Wordを出力"}
+          </button>
+          <button
+            className="btn"
+            onClick={() => handleExportAll(true)}
+            disabled={exporting}
+            type="button"
+            title="本文に加えて編集メモ・追加質問・事実確認・つながりメモも書き出す（校正用）"
+          >
+            メモ付きWord
           </button>
         </div>
       </div>
 
       {error ? <div className="alert" style={{ marginBottom: 16 }}>{error}</div> : null}
+
+      {resumingKeys.length > 0 ? (
+        <div className="alert info" style={{ marginBottom: 16 }}>
+          <span className="spinner" /> 中断された生成を復帰しています（{resumingKeys.length} 件）。
+          このまま完了を待つと結果が反映されます。
+        </div>
+      ) : null}
 
       {batch ? (
         <div className="alert info" style={{ marginBottom: 16 }}>
@@ -869,7 +955,7 @@ export default function WriterPage() {
                     </button>
                     <button
                       className="btn"
-                      onClick={handleExportSection}
+                      onClick={() => handleExportSection(false)}
                       disabled={!currentDraft || exporting}
                       type="button"
                     >

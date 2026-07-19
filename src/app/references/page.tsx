@@ -1,13 +1,28 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { loadProject, updateGlossary, updateReferences } from "@/lib/storage";
 import { makeId } from "@/lib/ids";
-import type { GlossaryTerm, Project, Reference } from "@/lib/types";
+import { postJson } from "@/lib/apiClient";
+import type { GlossaryTerm, Project, Reference, ReferenceCard } from "@/lib/types";
+
+const CARD_FIELDS: { key: keyof ReferenceCard; label: string; long?: boolean }[] = [
+  { key: "refKind", label: "種別（提案手法/実証/総説/データセット 等）" },
+  { key: "purpose", label: "目的・RQ", long: true },
+  { key: "method", label: "手法の要点", long: true },
+  { key: "findings", label: "主要な結果・発見", long: true },
+  { key: "contribution", label: "貢献・新規性", long: true },
+  { key: "limitations", label: "限界・批判点", long: true },
+  { key: "relationToThis", label: "本研究との関係（差分・引用の使いどころ）", long: true },
+];
 
 export default function ReferencesPage() {
   const [project, setProject] = useState<Project | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setProject(loadProject());
@@ -56,6 +71,38 @@ export default function ReferencesPage() {
     setProject(updated);
   }
 
+  function patchCard(refId: string, patch: Partial<ReferenceCard>) {
+    persistRefs(
+      references.map((x) =>
+        x.id === refId ? { ...x, card: { ...(x.card ?? {}), ...patch } } : x,
+      ),
+    );
+  }
+
+  // 論文モード: 文献ファイル（PDF/Word等）から文献カルテを生成して1件追加
+  async function handleImportReference(file: File) {
+    setError(null);
+    setNotice(null);
+    setImporting(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("field", project?.paperMeta?.field ?? "");
+      fd.append("researchQuestion", project?.paperMeta?.researchQuestion ?? "");
+      const res = await fetch("/api/extract-reference-card", { method: "POST", body: fd });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.reference) {
+        throw new Error(data?.error ?? "文献カルテの生成に失敗しました。");
+      }
+      persistRefs([...references, data.reference as Reference]);
+      setNotice(`「${data.reference.title}」の文献カルテを追加しました。内容を確認・修正してください。`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setImporting(false);
+    }
+  }
+
   function persistGlossary(next: GlossaryTerm[]) {
     const updated = updateGlossary(next);
     setProject(updated);
@@ -65,16 +112,44 @@ export default function ReferencesPage() {
     <>
       <div className="page-header">
         <div>
-          <h1>{isNews ? "取材源・出典" : "参考文献・用語集"}</h1>
+          <h1>{isNews ? "取材源・出典" : isPaper ? "参考文献・文献カルテ" : "参考文献・用語集"}</h1>
           <p className="subtitle">
             {isNews
               ? "登録した取材源・出典は、記事執筆と事実確認エージェントに自動で渡されます。"
               : isPaper
-                ? "登録した文献と用語は、本文執筆と出典チェックエージェントに自動で渡されます。登録した文献だけが本文の引用マーカー〔著者, 年〕に使えます（未登録の文献は〔要出典〕になります）。"
+                ? "登録した文献だけが本文の引用マーカー〔著者, 年〕に使えます（未登録は〔要出典〕）。PDFを取り込むと文献カルテ（目的・手法・結果・貢献・限界）を自動抽出し、関連研究・考察の執筆に使われます。"
                 : "登録した文献と用語は、本文執筆と出典チェックエージェントに自動で渡されます。"}
           </p>
         </div>
+        {isPaper ? (
+          <div className="actions">
+            <button
+              className="btn"
+              type="button"
+              disabled={importing}
+              onClick={() => fileRef.current?.click()}
+              title="論文PDF/Word等を取り込み、AIが文献カルテを抽出します"
+            >
+              {importing ? <span className="spinner" /> : null}
+              {importing ? "抽出中…" : "PDFから文献カルテを取り込む"}
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".pdf,.docx,.txt,.md"
+              style={{ display: "none" }}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleImportReference(f);
+                e.target.value = "";
+              }}
+            />
+          </div>
+        ) : null}
       </div>
+
+      {error ? <div className="alert" style={{ marginBottom: 16 }}>{error}</div> : null}
+      {notice ? <div className="alert info" style={{ marginBottom: 16 }}>{notice}</div> : null}
 
       <div className="panel">
         <div className="panel-header">
@@ -184,6 +259,36 @@ export default function ReferencesPage() {
                     }
                   />
                 </div>
+                {isPaper ? (
+                  <details className="ref-card" style={{ gridColumn: "1 / 6" }} open={!!r.card}>
+                    <summary>
+                      文献カルテ（関連研究・考察の執筆に使われます）
+                      {r.card && Object.values(r.card).some(Boolean) ? "" : "　— 未入力"}
+                    </summary>
+                    <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+                      {CARD_FIELDS.map((f) => (
+                        <div className="field" key={f.key}>
+                          <label>{f.label}</label>
+                          {f.long ? (
+                            <textarea
+                              className="input"
+                              rows={2}
+                              value={r.card?.[f.key] ?? ""}
+                              onChange={(e) => patchCard(r.id, { [f.key]: e.target.value })}
+                            />
+                          ) : (
+                            <input
+                              className="input"
+                              type="text"
+                              value={r.card?.[f.key] ?? ""}
+                              onChange={(e) => patchCard(r.id, { [f.key]: e.target.value })}
+                            />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                ) : null}
               </div>
             ))
           )}

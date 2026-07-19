@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { Nav } from "@/components/Nav";
 import { ProjectSwitcher } from "@/components/ProjectSwitcher";
+import { GateBadge } from "@/components/GateBadge";
 
 export const metadata: Metadata = {
   title: "アキカゼ出版AI（デモ）",
@@ -20,7 +21,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               <span className="tag">DEMO</span>
             </div>
             <ProjectSwitcher />
-            <div className="right">編集者向け 業務デモ</div>
+            <div className="right">
+              <GateBadge />
+              <span>編集者向け 業務デモ</span>
+            </div>
           </header>
           <Nav />
           <main className="main">{children}</main>

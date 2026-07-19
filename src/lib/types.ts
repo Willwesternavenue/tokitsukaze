@@ -146,6 +146,8 @@ export type Project = {
   sectionAgentReports?: Record<string, AgentReportSummary[]>;
   /** 上と同じキー → ひとつ前の診断結果。再生成後の「解決済み」判定に使う */
   sectionAgentReportsPrev?: Record<string, AgentReportSummary[]>;
+  /** 「対応不要」にした指摘の安定ID（節key|agent|message|loc）。トリアージで除外される */
+  dismissedFindings?: string[];
 };
 
 export type ReviewResult = {
@@ -260,6 +262,8 @@ export type PaperMeta = {
   keywords?: string;         // キーワード（カンマ区切り。任意）
   /** 引用・参考文献の体裁（未設定は "apa"＝従来の〔著者, 年〕互換）。src/lib/citation.ts */
   citationStyle?: import("./citation").CitationStyle;
+  abstract?: string;         // 要旨（AI生成・編集可。Word先頭に出力）
+  preprint?: string;         // 予稿版（4-8p の短縮原稿。Markdown。AI生成・編集可）
 };
 
 // ===== 翻訳書モード =====
@@ -360,6 +364,21 @@ export type ScreenplayMeta = {
 
 // ===== ビジネス書: 参考文献・用語集 =====
 
+/**
+ * 文献カルテ（論文モード）。引用文献の「中身」を学術的な観点で保持し、
+ * 関連研究・考察の執筆に使う（メタデータだけでは中身が書けないため）。
+ * 小説の作品カルテ（ReferenceWork: 文体プロファイル/確定設定/登場人物）とは別物。
+ */
+export type ReferenceCard = {
+  refKind?: string;        // 種別（提案手法 / 実証 / 総説 / データセット / 理論 等）
+  purpose?: string;        // 目的・リサーチクエスチョン
+  method?: string;         // 手法の要点
+  findings?: string;       // 主要な結果・発見
+  contribution?: string;   // 貢献・新規性
+  limitations?: string;    // 限界・批判点
+  relationToThis?: string; // 本研究との関係（差分・引用の使いどころ）
+};
+
 export type Reference = {
   id: string;
   title: string;
@@ -368,6 +387,8 @@ export type Reference = {
   year?: string;
   url?: string;
   notes?: string;    // どの主張の裏付けに使うか等
+  /** 論文モードの文献カルテ（PDF取込やAI抽出で埋まる。任意・後方互換） */
+  card?: ReferenceCard;
 };
 
 export type GlossaryTerm = {

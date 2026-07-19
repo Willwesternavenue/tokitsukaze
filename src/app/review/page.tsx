@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { loadProject } from "@/lib/storage";
+import { loadProject, setFindingDismissed } from "@/lib/storage";
 import { getGenreConfig } from "@/lib/genreConfig";
 import { agentLabel } from "@/lib/staffRegistry";
 import type { AgentFinding, AgentReportSummary, Project } from "@/lib/types";
@@ -39,10 +39,31 @@ function severityBadgeClass(w: Severity): string {
   return w === "error" ? "danger" : w === "warning" ? "warn" : w === "info" ? "gray" : "success";
 }
 
+// 重要度Tier（トリアージ用のラベル）。内部の severity と1:1で対応
+type Tier = "error" | "warning" | "info";
+const TIER_LABEL: Record<Tier, string> = {
+  error: "重大",
+  warning: "要修正",
+  info: "軽微",
+};
+const TIER_ORDER: Tier[] = ["error", "warning", "info"];
+
+type FlatFinding = {
+  id: string; // 安定ID（節key|agent|message|loc）: 無視の永続化に使う
+  tier: Tier;
+  message: string;
+  loc?: string;
+  agentLabel: string;
+  chapterTitle: string;
+  sectionTitle: string;
+  chapterNumber: number;
+};
+
 export default function ReviewPage() {
   const [project, setProject] = useState<Project | null>(null);
   const [activeTab, setActiveTab] = useState<string>("summary");
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [triageFilter, setTriageFilter] = useState<Tier | "all">("all");
 
   useEffect(() => {
     setProject(loadProject());
@@ -114,6 +135,58 @@ export default function ReviewPage() {
     [sections],
   );
 
+  // 全指摘を重要度起点で平坦化（トリアージ用）
+  const flatFindings: FlatFinding[] = useMemo(() => {
+    const out: FlatFinding[] = [];
+    for (const s of sections) {
+      for (const r of s.reports) {
+        for (const f of r.findings) {
+          out.push({
+            id: `${s.key}|${r.agent}|${f.message}|${f.loc ?? ""}`,
+            tier: f.severity,
+            message: f.message,
+            loc: f.loc,
+            agentLabel: r.label || agentLabel(r.agent, project?.genre),
+            chapterTitle: s.chapterTitle,
+            sectionTitle: s.sectionTitle,
+            chapterNumber: s.chapterNumber,
+          });
+        }
+      }
+    }
+    // 重大→要修正→軽微、同Tier内は章順
+    out.sort(
+      (a, b) =>
+        TIER_ORDER.indexOf(a.tier) - TIER_ORDER.indexOf(b.tier) ||
+        a.chapterNumber - b.chapterNumber,
+    );
+    return out;
+  }, [sections, project]);
+
+  const dismissedSet = useMemo(
+    () => new Set(project?.dismissedFindings ?? []),
+    [project],
+  );
+  const activeFindings = useMemo(
+    () => flatFindings.filter((f) => !dismissedSet.has(f.id)),
+    [flatFindings, dismissedSet],
+  );
+  const dismissedFindings = useMemo(
+    () => flatFindings.filter((f) => dismissedSet.has(f.id)),
+    [flatFindings, dismissedSet],
+  );
+
+  // Tier別件数は「無視していない指摘」で数える
+  const tierCounts = useMemo(() => {
+    const c: Record<Tier, number> = { error: 0, warning: 0, info: 0 };
+    for (const f of activeFindings) c[f.tier] += 1;
+    return c;
+  }, [activeFindings]);
+
+  function dismiss(id: string, on: boolean) {
+    setProject(setFindingDismissed(id, on));
+  }
+
   if (!project) {
     return (
       <>
@@ -157,6 +230,16 @@ export default function ReviewPage() {
             >
               サマリ
               <span className="review-tab-count">{totalFindings}</span>
+            </button>
+            <button
+              type="button"
+              className={`review-tab ${activeTab === "__triage__" ? "active" : ""}`}
+              onClick={() => setActiveTab("__triage__")}
+              title="重要度順に横断表示（重大から対応）"
+            >
+              <span className="review-tab-dot sev-error" />
+              重要度順
+              <span className="review-tab-count">{tierCounts.error}</span>
             </button>
             {agentStats.map((a) => (
               <button
@@ -237,6 +320,97 @@ export default function ReviewPage() {
                     </div>
                   );
                 })}
+              </div>
+            </div>
+          ) : null}
+
+          {/* 重要度トリアージタブ */}
+          {activeTab === "__triage__" ? (
+            <div className="panel">
+              <div className="panel-header">
+                <h2>重要度順トリアージ</h2>
+                <span className="hint">重大なものから優先的に対応できます</span>
+              </div>
+              <div className="panel-body dense">
+                <div className="triage-filter">
+                  <button
+                    type="button"
+                    className={`triage-chip ${triageFilter === "all" ? "active" : ""}`}
+                    onClick={() => setTriageFilter("all")}
+                  >
+                    すべて {activeFindings.length}
+                  </button>
+                  {TIER_ORDER.map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      className={`triage-chip ${severityBadgeClass(t)} ${triageFilter === t ? "active" : ""}`}
+                      onClick={() => setTriageFilter(t)}
+                    >
+                      {TIER_LABEL[t]} {tierCounts[t]}
+                    </button>
+                  ))}
+                </div>
+                {(() => {
+                  const list = activeFindings.filter(
+                    (f) => triageFilter === "all" || f.tier === triageFilter,
+                  );
+                  if (list.length === 0) {
+                    return (
+                      <div className="empty-state">
+                        {triageFilter === "all"
+                          ? "対応が必要な指摘はありません。"
+                          : `「${TIER_LABEL[triageFilter as Tier]}」の指摘はありません。`}
+                      </div>
+                    );
+                  }
+                  return (
+                    <ul className="list-block">
+                      {list.map((f) => (
+                        <li key={f.id} className={`triage-item finding severity-${f.tier}`}>
+                          <span className={`badge ${severityBadgeClass(f.tier)}`}>{TIER_LABEL[f.tier]}</span>
+                          <div style={{ flex: 1 }}>
+                            <div className="finding-message">{f.message}</div>
+                            <div className="muted" style={{ fontSize: 11 }}>
+                              {f.agentLabel} ・ {f.chapterTitle} ／ {f.sectionTitle}
+                              {f.loc ? <span>　「{f.loc}」</span> : null}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn sm ghost"
+                            title="この指摘を対応不要にする（トリアージから外す）"
+                            onClick={() => dismiss(f.id, true)}
+                          >
+                            対応不要
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  );
+                })()}
+
+                {dismissedFindings.length > 0 ? (
+                  <details className="dismissed-block" style={{ marginTop: 12 }}>
+                    <summary>無視した指摘（{dismissedFindings.length}）</summary>
+                    <ul className="list-block" style={{ marginTop: 8 }}>
+                      {dismissedFindings.map((f) => (
+                        <li key={f.id} className="triage-item" style={{ opacity: 0.7 }}>
+                          <span className="badge gray">{TIER_LABEL[f.tier]}</span>
+                          <div style={{ flex: 1 }}>
+                            <div className="finding-message">{f.message}</div>
+                            <div className="muted" style={{ fontSize: 11 }}>
+                              {f.agentLabel} ・ {f.chapterTitle} ／ {f.sectionTitle}
+                            </div>
+                          </div>
+                          <button type="button" className="btn sm" onClick={() => dismiss(f.id, false)}>
+                            戻す
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                ) : null}
               </div>
             </div>
           ) : null}
