@@ -25,25 +25,53 @@ import type { Chapter, Project, Section } from "./types";
  * Vercel の body 制限・プロンプト肥大の原因になるため落とす。bodyHistory も同様。
  */
 export function slimProjectForDraft(project: Project, keepSectionId: string): Project {
-  if (project.genre !== "translation") return project;
-  return {
+  const isTranslation = project.genre === "translation";
+
+  // 本文生成に不要で、節数×エージェント数で肥大する情報は全モードで落とす。
+  // これを送らないと、論文などで節が増えるほどペイロード/DB保存が膨らみ、
+  // ある規模以降で生成が失敗し続ける（26節目以降で連発、等）。
+  const stripped: Project = {
     ...project,
-    // 参照グローバル対訳表＋プロジェクト固有をマージした実効対訳表を送る
-    // （サーバ側の翻訳者・用語統一チェックはそのまま project.termPairs を読む）
-    termPairs: effectiveTermPairs(project),
     outlineProposals: [],
-    selectedOutline: project.selectedOutline
-      ? {
-          ...project.selectedOutline,
-          chapters: project.selectedOutline.chapters.map((c) => ({
-            ...c,
-            sections: c.sections.map((s) =>
-              s.id === keepSectionId ? s : { ...s, sourceText: undefined },
-            ),
-          })),
-        }
-      : undefined,
-    generatedSections: project.generatedSections.map(({ bodyHistory: _h, ...rest }) => rest),
+    sectionAgentReports: {},
+    sectionAgentReportsPrev: {},
+    dismissedFindings: [],
+  };
+
+  if (isTranslation) {
+    return {
+      ...stripped,
+      // 参照グローバル対訳表＋プロジェクト固有をマージした実効対訳表を送る
+      termPairs: effectiveTermPairs(project),
+      selectedOutline: project.selectedOutline
+        ? {
+            ...project.selectedOutline,
+            chapters: project.selectedOutline.chapters.map((c) => ({
+              ...c,
+              sections: c.sections.map((s) =>
+                s.id === keepSectionId ? s : { ...s, sourceText: undefined },
+              ),
+            })),
+          }
+        : undefined,
+      // 翻訳は直前セグメントの末尾（previousTail）を使うので本文は保持。履歴だけ落とす
+      generatedSections: project.generatedSections.map(({ bodyHistory: _h, ...rest }) => rest),
+    };
+  }
+
+  // 論文・その他: 他節のフル本文・メモは不要（draftStep/整合性は先頭240字要約しか見ない）。
+  // 節が増えても送信量が一定に保たれるよう、本文は先頭のみに切り詰める。
+  return {
+    ...stripped,
+    generatedSections: project.generatedSections.map((d) => ({
+      ...d,
+      body: (d.body ?? "").slice(0, 400),
+      editorNotes: [],
+      followUpQuestions: [],
+      factCheckPoints: [],
+      continuityNotes: [],
+      bodyHistory: undefined,
+    })),
   };
 }
 
@@ -83,7 +111,11 @@ export async function finishSectionDraft(runId: string): Promise<Project> {
   const poll = await pollRun<DraftWorkflowResult>(runId);
   if (!poll.ok) throw new Error(poll.error);
   const draft = poll.result?.draft;
-  if (!draft) throw new Error("AIから本文が返りませんでした。");
+  if (!draft) {
+    throw new Error(
+      "AIから本文が返りませんでした（生成が空でした）。素材や参考文献が多い場合は分量を減らして再実行してください。",
+    );
+  }
 
   // 適用先は「現在の」プロジェクト（復帰時も含めて最新を読む）
   const current = loadProject();
