@@ -7,17 +7,12 @@ import {
   loadLibrary,
   loadProject,
   loadPrompts,
-  renameProject,
   resetProject,
-  saveLibrary,
   savePrompts,
   importProject as saveImportedProject,
-  updateProject,
 } from "@/lib/storage";
 import { exportProjectToJson, importProjectFromFile } from "@/lib/projectIO";
-import { allGenres, getGenreConfig } from "@/lib/genreConfig";
-import { plannedGenres } from "@/lib/staffRegistry";
-import type { Genre, Project } from "@/lib/types";
+import type { Project } from "@/lib/types";
 import { useRef } from "react";
 
 function reloadApp(): void {
@@ -43,20 +38,6 @@ export default function SettingsPage() {
         </div>
         <div className="empty-state">読み込み中…</div>
       </>
-    );
-  }
-
-  function handleRename(name: string) {
-    if (!project) return;
-    renameProject(project.id, name);
-    setProject({ ...project, name });
-  }
-
-  function handleGenreChange(genre: Genre) {
-    const next = updateProject((p) => ({ ...p, genre }));
-    setProject(next);
-    setInfo(
-      `モードを「${getGenreConfig(genre).label}」に変更しました。ナビゲーションとナレッジ項目が切り替わります。`,
     );
   }
 
@@ -111,62 +92,13 @@ export default function SettingsPage() {
       <div className="page-header">
         <div>
           <h1>設定</h1>
-          <p className="subtitle">プロジェクトの基本設定とデータの入出力。</p>
+          <p className="subtitle">
+            データの入出力とプロジェクトの管理。プロジェクト名・モードは「01 素材」で変更できます。
+          </p>
         </div>
       </div>
 
       {info ? <div className="alert info" style={{ marginBottom: 16 }}>{info}</div> : null}
-
-      <div className="panel">
-        <div className="panel-header">
-          <h2>プロジェクト</h2>
-        </div>
-        <div className="panel-body">
-          <div className="field-row">
-            <div className="field">
-              <label>プロジェクト名</label>
-              <input
-                className="input"
-                type="text"
-                value={project.name}
-                onChange={(e) => handleRename(e.target.value)}
-              />
-            </div>
-            <div className="field">
-              <label>モード（ジャンル）</label>
-              <select
-                className="input"
-                value={project.genre}
-                onChange={(e) => handleGenreChange(e.target.value as Genre)}
-              >
-                {allGenres.map((g) => (
-                  <option key={g.genre} value={g.genre}>
-                    {g.label}
-                  </option>
-                ))}
-              </select>
-              <p className="help">
-                モードによってワークフローのラベル・ナレッジ項目・自動実行されるAIスタッフが切り替わります。
-              </p>
-            </div>
-          </div>
-          <hr className="sep" />
-          <div>
-            <div className="field-label">今後のモード（ロードマップ）</div>
-            <ul className="list-block" style={{ border: "1px solid var(--border)", borderRadius: 3 }}>
-              {plannedGenres.map((g) => (
-                <li key={g.label} className="flex" style={{ gap: 10 }}>
-                  <span className={`badge ${g.status === "next" ? "" : "gray"}`}>
-                    {g.status === "next" ? "次期対応" : "検討中"}
-                  </span>
-                  <strong style={{ fontSize: 12 }}>{g.label}</strong>
-                  <span className="muted" style={{ fontSize: 11 }}>{g.note}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      </div>
 
       <div className="panel">
         <div className="panel-header">
