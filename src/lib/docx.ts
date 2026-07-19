@@ -14,6 +14,7 @@ import {
 } from "docx";
 import { saveAs } from "file-saver";
 import type { Project, SectionDraft } from "./types";
+import { getGenreConfig } from "./genreConfig";
 
 function heading(text: string, level: (typeof HeadingLevel)[keyof typeof HeadingLevel]): Paragraph {
   return new Paragraph({ text, heading: level });
@@ -40,15 +41,21 @@ function bodyParagraphs(body: string): Paragraph[] {
   return body.split(/\n+/).filter(Boolean).map((line) => para(line));
 }
 
-function sectionParagraphs(draft: SectionDraft): Paragraph[] {
+/**
+ * 節の出力。既定は本文のみのクリーンな原稿。
+ * includeNotes=true のときだけ編集メモ等の作業メモを付ける（校正用）。
+ */
+function sectionParagraphs(draft: SectionDraft, includeNotes = false): Paragraph[] {
   const blocks: Paragraph[] = [];
   blocks.push(heading(draft.sectionTitle, HeadingLevel.HEADING_2));
   blocks.push(...bodyParagraphs(draft.body));
   blocks.push(spacer());
-  blocks.push(...listBlock("編集メモ", draft.editorNotes));
-  blocks.push(...listBlock("追加質問", draft.followUpQuestions));
-  blocks.push(...listBlock("事実確認ポイント", draft.factCheckPoints));
-  blocks.push(...listBlock("前後のつながりメモ", draft.continuityNotes));
+  if (includeNotes) {
+    blocks.push(...listBlock("編集メモ", draft.editorNotes));
+    blocks.push(...listBlock("追加質問", draft.followUpQuestions));
+    blocks.push(...listBlock("事実確認ポイント", draft.factCheckPoints));
+    blocks.push(...listBlock("前後のつながりメモ", draft.continuityNotes));
+  }
   return blocks;
 }
 
@@ -61,7 +68,17 @@ async function downloadDoc(doc: Document, filename: string): Promise<void> {
   saveAs(blob, filename);
 }
 
-export async function exportSectionDocx(project: Project, draft: SectionDraft): Promise<void> {
+export async function exportSectionDocx(
+  project: Project,
+  draft: SectionDraft,
+  includeNotes = false,
+): Promise<void> {
+  const subjectLabel = getGenreConfig(project.genre).material.subjectLabel;
+  const front: Paragraph[] = [heading(project.name, HeadingLevel.TITLE)];
+  if (project.intervieweeName?.trim()) {
+    front.push(para(`${subjectLabel}：${project.intervieweeName}`));
+  }
+  front.push(spacer());
   const doc = new Document({
     creator: "アキカゼ出版AI",
     title: `${draft.chapterTitle} / ${draft.sectionTitle}`,
@@ -69,11 +86,9 @@ export async function exportSectionDocx(project: Project, draft: SectionDraft): 
       {
         properties: {},
         children: [
-          heading(project.name, HeadingLevel.TITLE),
-          para(`取材対象者：${project.intervieweeName}`),
-          spacer(),
+          ...front,
           heading(draft.chapterTitle, HeadingLevel.HEADING_1),
-          ...sectionParagraphs(draft),
+          ...sectionParagraphs(draft, includeNotes),
         ],
       },
     ],
@@ -81,25 +96,30 @@ export async function exportSectionDocx(project: Project, draft: SectionDraft): 
   await downloadDoc(doc, `${fileSafe(draft.chapterTitle)}_${fileSafe(draft.sectionTitle)}.docx`);
 }
 
-export async function exportProjectDocx(project: Project): Promise<void> {
+export async function exportProjectDocx(project: Project, includeNotes = false): Promise<void> {
+  // クリーンな原稿として出力する（作業メモ・内部メタは既定で出さない）
+  const isPaper = project.genre === "paper";
+  const subjectLabel = getGenreConfig(project.genre).material.subjectLabel;
   const children: Paragraph[] = [];
   children.push(heading(project.name, HeadingLevel.TITLE));
-  children.push(para(`取材対象者：${project.intervieweeName}`));
-  children.push(para(`テーマ：${project.theme}`));
-  children.push(para(`想定読者：${project.targetReader}`));
+  if (project.intervieweeName?.trim()) {
+    children.push(para(`${subjectLabel}：${project.intervieweeName}`));
+  }
   children.push(spacer());
 
   const outline = project.selectedOutline;
   if (!outline) {
     children.push(para("（構成案が未選択です。原稿生成画面で構成案を選んでください。）"));
   } else {
-    children.push(heading(`構成：${outline.title}`, HeadingLevel.HEADING_1));
-    children.push(para(outline.concept));
-    children.push(spacer());
-
     for (const chapter of outline.chapters) {
-      children.push(heading(`第${chapter.chapterNumber}章　${chapter.title}`, HeadingLevel.HEADING_1));
-      if (chapter.summary) children.push(para(chapter.summary));
+      // 論文は「第N章」を付けず章タイトルのみ。他ジャンルは従来どおり
+      children.push(
+        heading(
+          isPaper ? chapter.title : `第${chapter.chapterNumber}章　${chapter.title}`,
+          HeadingLevel.HEADING_1,
+        ),
+      );
+      // 章概要は内部メタ（論文の【役割:…】タグ等）なので原稿には出さない
       children.push(spacer());
 
       for (const section of chapter.sections) {
@@ -107,7 +127,7 @@ export async function exportProjectDocx(project: Project): Promise<void> {
           (d) => d.chapterId === chapter.id && d.sectionId === section.id,
         );
         if (draft) {
-          children.push(...sectionParagraphs(draft));
+          children.push(...sectionParagraphs(draft, includeNotes));
         } else {
           children.push(heading(section.title, HeadingLevel.HEADING_2));
           children.push(para("（本文未生成）"));
