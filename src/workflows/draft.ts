@@ -211,7 +211,7 @@ async function draftStep(
               : project.genre === "translation"
                 ? buildTranslationContext(project)
                 : project.genre === "paper"
-                  ? buildPaperContext(project)
+                  ? buildPaperContext(project, section)
                   : "";
   // 参照ライブラリ（小説向けの作品カルテ＝文体踏襲・キャラ矛盾防止）。
   // 論文モードには文体プロファイル・登場人物の概念が無意味なので注入しない
@@ -456,7 +456,7 @@ function buildNewsContext(project: Project): string {
 // 論文: 論文仕様・参考文献・用語集を system prompt に注入する。
 // 注入方針（設計書 §5）: PaperMeta は常時全文（短い固定サイズ）、references / glossary は
 // 1行サマリの縮約のみ。原文や長文は入れない
-function buildPaperContext(project: Project): string {
+function buildPaperContext(project: Project, section?: Section): string {
   const m = project.paperMeta;
   const refs = project.references ?? [];
   const terms = project.glossary ?? [];
@@ -520,6 +520,22 @@ function buildPaperContext(project: Project): string {
       "## 参考文献\n（未登録。引用マーカー〔著者, 年〕は一切使わず、出典が必要な箇所は〔要出典〕とすること）",
     );
   }
+
+  // 節に紐付いた文献を「この節で優先的に引用」として明示（HINT型）。
+  // 孤児ID（project.references に無いID）は突合で自然に除外される。
+  const linkedIds = new Set(section?.referenceIds ?? []);
+  const linked = refs.filter((r) => linkedIds.has(r.id));
+  if (linked.length > 0) {
+    parts.push(
+      "## この節で優先的に引用する文献（この節に紐付け済み。該当する主張ではこれらの【引用マーカー】を優先して使う。ただし他の登録文献の引用も禁止しない）",
+    );
+    parts.push(
+      linked
+        .map((r) => `- ${r.title}${r.author ? ` / ${r.author}` : ""} 【引用マーカー】${authorYearMarker(r)}`)
+        .join("\n"),
+    );
+  }
+
   if (terms.length > 0) {
     parts.push("## 用語集（この定義に従って用語を使うこと）");
     parts.push(terms.map((t) => `- ${t.term}: ${t.definition}`).join("\n"));
