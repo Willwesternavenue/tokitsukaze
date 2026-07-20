@@ -472,6 +472,20 @@ export default function WriterPage() {
     syncSelectedFrom(next, selected.chapter.id, selected.section.id);
   }
 
+  // 論文モード: この節に使う文献の紐付けをトグルする
+  function handleToggleSectionReference(refId: string, checked: boolean) {
+    if (!selected) return;
+    const current = selected.section.referenceIds ?? [];
+    const nextIds = checked
+      ? Array.from(new Set([...current, refId]))
+      : current.filter((id) => id !== refId);
+    const next = updateSectionInOutline(selected.chapter.id, selected.section.id, {
+      referenceIds: nextIds,
+    });
+    setProject(next);
+    syncSelectedFrom(next, selected.chapter.id, selected.section.id);
+  }
+
   // 手動: 章に小見出しを追加
   function handleAddSection(chapterId: string) {
     const next = addSectionToChapter(chapterId);
@@ -1023,6 +1037,35 @@ export default function WriterPage() {
                     <p className="help" style={{ marginTop: 8 }}>
                       小見出しを直したら「本文を{currentDraft ? "再" : ""}生成」で、新しい小見出しに沿った本文を作れます。
                     </p>
+                    {project.genre === "paper" && (project.references?.length ?? 0) > 0 ? (
+                      <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed var(--border)" }}>
+                        <div className="field-label">この節で使う文献（優先的に引用されます）</div>
+                        <ul className="list-block" style={{ border: "1px solid var(--border)", borderRadius: 3 }}>
+                          {project.references.map((r) => {
+                            const checked = (selected.section.referenceIds ?? []).includes(r.id);
+                            return (
+                              <li key={r.id}>
+                                <label className="staff-toggle" style={{ gap: 8 }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={(e) => handleToggleSectionReference(r.id, e.target.checked)}
+                                  />
+                                  <span style={{ fontSize: 12 }}>
+                                    {r.title}
+                                    {r.author ? <span className="muted">（{r.author}{r.year ? ` ${r.year}` : ""}）</span> : null}
+                                  </span>
+                                </label>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                        <p className="help" style={{ marginTop: 6 }}>
+                          チェックした文献は、この節の本文生成時に「優先的に引用する文献」としてAIへ渡されます。
+                          文献の登録・編集は <Link href="/references">参考文献・文献カルテ</Link> で。
+                        </p>
+                      </div>
+                    ) : null}
                     {currentDraft ? (
                       <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed var(--border)" }}>
                         <div className="flex between" style={{ alignItems: "center" }}>
