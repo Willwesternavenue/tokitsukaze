@@ -88,7 +88,7 @@ export async function startSectionDraft(
   const base = prompts.find(
     (p) => p.id === getGenreConfig(baseProject.genre).pipelinePrompts.draft,
   );
-  const promptTemplate = base ? withStyleRules(base) : undefined;
+  const promptTemplate = base ? withStyleRules(base, baseProject.genre) : undefined;
   const r = await postJson<{ runId?: string }>("/api/generate-draft", {
     project: slimProjectForDraft(baseProject, section.id),
     chapter,
