@@ -6,6 +6,8 @@ export type Section = {
   sceneMeta?: SceneMeta;
   /** 翻訳書モード: このセグメントの原文 (他ジャンルでは undefined) */
   sourceText?: string;
+  /** 論文モード: この節で優先的に引用する文献ID（本体は project.references）。未設定=紐付けなし */
+  referenceIds?: string[];
 };
 
 export type Chapter = {
