@@ -63,34 +63,44 @@ export function Nav(): JSX.Element {
         );
       })}
 
-      {/* ナレッジ: ジャンルで中身が変わるドロップダウン */}
-      <div className="nav-dropdown" ref={knowledgeRef}>
-        <button
-          type="button"
-          className={`nav-dropdown-btn ${knowledgeActive ? "active" : ""}`}
-          onClick={() => setKnowledgeOpen((o) => !o)}
-          aria-expanded={knowledgeOpen}
-          aria-haspopup="menu"
+      {/* ナレッジ: 項目が1つなら直接リンク（キャレット無し）、複数ならドロップダウン */}
+      {config.knowledge.length === 1 ? (
+        <Link
+          href={config.knowledge[0].href}
+          className={knowledgeActive ? "active" : ""}
+          title={config.knowledge[0].label}
         >
           <span>ナレッジ</span>
-          <span className="caret">▾</span>
-        </button>
-        {knowledgeOpen ? (
-          <div className="nav-dropdown-menu" role="menu">
-            {config.knowledge.map((k) => (
-              <Link
-                key={k.href}
-                href={k.href}
-                role="menuitem"
-                className={`nav-dropdown-item ${pathname?.startsWith(k.href) ? "active" : ""}`}
-                onClick={() => setKnowledgeOpen(false)}
-              >
-                {k.label}
-              </Link>
-            ))}
-          </div>
-        ) : null}
-      </div>
+        </Link>
+      ) : (
+        <div className="nav-dropdown" ref={knowledgeRef}>
+          <button
+            type="button"
+            className={`nav-dropdown-btn ${knowledgeActive ? "active" : ""}`}
+            onClick={() => setKnowledgeOpen((o) => !o)}
+            aria-expanded={knowledgeOpen}
+            aria-haspopup="menu"
+          >
+            <span>ナレッジ</span>
+            <span className="caret">▾</span>
+          </button>
+          {knowledgeOpen ? (
+            <div className="nav-dropdown-menu" role="menu">
+              {config.knowledge.map((k) => (
+                <Link
+                  key={k.href}
+                  href={k.href}
+                  role="menuitem"
+                  className={`nav-dropdown-item ${pathname?.startsWith(k.href) ? "active" : ""}`}
+                  onClick={() => setKnowledgeOpen(false)}
+                >
+                  {k.label}
+                </Link>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      )}
 
       {/* 管理 */}
       <Link href="/staff" className={pathname?.startsWith("/staff") ? "active" : ""}>
