@@ -447,11 +447,14 @@ export function setSectionLocked(
   chapterId: string,
   sectionId: string,
   locked: boolean,
+  reason: "user" | "manual" = "user",
 ): Project {
   return updateProject((p) => ({
     ...p,
     generatedSections: p.generatedSections.map((d) =>
-      d.chapterId === chapterId && d.sectionId === sectionId ? { ...d, locked } : d,
+      d.chapterId === chapterId && d.sectionId === sectionId
+        ? { ...d, locked, lockReason: locked ? reason : undefined }
+        : d,
     ),
   }));
 }
@@ -671,6 +674,53 @@ export function replaceDraftBody(
         { savedAt: d.updatedAt, body: d.body, note },
       ].slice(-10);
       return { ...d, body: newBody, bodyHistory: history, updatedAt: new Date().toISOString() };
+    }),
+  }));
+}
+
+/**
+ * 本文の手動編集を保存する（全ジャンル共通）。
+ * 第4引数 isManualEdit は「非翻訳の手動編集か」＝自動保護と履歴圧縮の**両方**を制御する。
+ * - 旧本文を bodyHistory に退避（最大10版）。isManualEdit のときだけ、前回の手動保存(bodyEditedAt)から
+ *   5分以内の連続編集は積み増さずまとめる（AI 生成版が履歴から押し出されるのを防ぐ）。
+ * - bodyEditedAt を更新。
+ * - isManualEdit=true かつ初回(bodyEditedAt 未設定)かつ未ロックのときのみ自動保護(locked/lockReason="manual")。
+ * - **翻訳モードは isManualEdit=false で呼ぶ**＝自動保護もしない・履歴圧縮もしない（毎回1版積む＝従来の
+ *   replaceDraftBody と同じ挙動）。波及・一括翻訳の対象からも外さない。
+ */
+export function saveManualBodyEdit(
+  chapterId: string,
+  sectionId: string,
+  newBody: string,
+  isManualEdit: boolean,
+): Project {
+  const HISTORY_COALESCE_MS = 5 * 60 * 1000;
+  const nowIso = new Date().toISOString();
+  return updateProject((p) => ({
+    ...p,
+    generatedSections: p.generatedSections.map((d) => {
+      if (d.chapterId !== chapterId || d.sectionId !== sectionId) return d;
+      if (d.body === newBody) return d;
+      const hist = d.bodyHistory ?? [];
+      const last = hist[hist.length - 1];
+      const coalesce =
+        isManualEdit &&
+        !!last &&
+        last.note === "手動編集前" &&
+        !!d.bodyEditedAt &&
+        Date.now() - Date.parse(d.bodyEditedAt) < HISTORY_COALESCE_MS;
+      const bodyHistory = coalesce
+        ? hist
+        : [...hist, { savedAt: d.updatedAt, body: d.body, note: "手動編集前" }].slice(-10);
+      const autoLockNow = isManualEdit && !d.bodyEditedAt && !d.locked;
+      return {
+        ...d,
+        body: newBody,
+        bodyHistory,
+        bodyEditedAt: nowIso,
+        ...(autoLockNow ? { locked: true, lockReason: "manual" as const } : {}),
+        updatedAt: nowIso,
+      };
     }),
   }));
 }
