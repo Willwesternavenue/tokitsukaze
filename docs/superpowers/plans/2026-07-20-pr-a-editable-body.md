@@ -121,7 +121,16 @@ export function setSectionLocked(
 }
 ```
 
-- [ ] **Step 4: `saveManualBodyEdit` を追加** — `replaceDraftBody` 関数の閉じ `}` の直後に追加（`replaceDraftBody` 本体は変更しない）:
+- [ ] **Step 4: `saveManualBodyEdit` を追加** — `replaceDraftBody` の末尾（次の文字列で終わる）を検索し、その直後に新関数を挿入（`replaceDraftBody` 本体は変更しない）:
+
+アンカー（この行群の直後に挿入）:
+```ts
+      return { ...d, body: newBody, bodyHistory: history, updatedAt: new Date().toISOString() };
+    }),
+  }));
+}
+```
+挿入する新関数:
 ```ts
 /**
  * 本文の手動編集を保存する（全ジャンル共通）。
@@ -184,6 +193,8 @@ git -c user.name="Will" -c user.email="tachiiri@westernavenu.com" commit -m "$(p
 
 **Interfaces:** Consumes `saveManualBodyEdit`（Task 2）。`editingBody: boolean` は据え置き。
 
+前提（確認済み）: `handleStartEditBody` は `setBodyDraft(currentDraft.body); setEditingBody(true); setTrView("target");` のみ。`setTrView("target")` は翻訳の描画ブランチしか読まないので**非翻訳で押しても無害**。よって全ジャンル共有のまま変更不要。
+
 - [ ] **Step 1: import に `saveManualBodyEdit` を追加** — storage からの import 群（`replaceDraftBody,` がある塊）に `saveManualBodyEdit,` を足す。
 
 - [ ] **Step 2: `handleSaveBody` を付け替え（autoLock=非翻訳）** — 次を検索して置換:
@@ -215,9 +226,10 @@ git -c user.name="Will" -c user.email="tachiiri@westernavenu.com" commit -m "$(p
     );
     setProject(next);
     setEditingBody(false);
-    syncSelectedFrom(next, selected.chapter.id, selected.section.id);
   }
 ```
+
+※ 元の `handleSaveBody` に無かった `syncSelectedFrom` は**足さない**（本文は `SectionDraft` 側にあり `selected.section` には無いので、保存後の `currentDraft` は `setProject` で自動的に新 body を反映する。翻訳パスに新たな副作用を持ち込まない＝翻訳フロー不変）。
 
 - [ ] **Step 3: 「本文を編集」ボタンを全ジャンルに開放（一箇所で完結）** — 次を検索して置換:
 
@@ -238,7 +250,12 @@ git -c user.name="Will" -c user.email="tachiiri@westernavenu.com" commit -m "$(p
                     ) : null}
 ```
 
-- [ ] **Step 4: 非翻訳の本文表示に編集 textarea を追加** — 次を検索して置換（非翻訳ブランチの読み取り専用 div）:
+- [ ] **Step 4: 非翻訳の本文表示に編集 textarea を追加** — まずアンカーが一意であることを確認（確認済み: `（本文が空です）` は1件、`（訳文が空です）` は2件で別物）:
+
+Run: `grep -c '（本文が空です）' src/app/writer/page.tsx`
+Expected: `1`（2以上なら別の一意アンカーに絞ること）。
+
+次を検索して置換（非翻訳ブランチの読み取り専用 div）:
 
 置換前:
 ```tsx
@@ -292,11 +309,11 @@ git -c user.name="Will" -c user.email="tachiiri@westernavenu.com" commit -m "$(p
 ```tsx
                     {!isTranslation && currentDraft?.bodyEditedAt ? (
                       <span className="badge warn" style={{ fontSize: 10, marginTop: 4, display: "inline-block" }}>
-                        手動編集済み{currentDraft.locked && currentDraft.lockReason === "manual" ? "（保護中）" : ""}
+                        手動編集済み{currentDraft.locked ? "（保護中）" : ""}
                       </span>
                     ) : null}
 ```
-（翻訳はバッジを出さない＝UI不変。）
+（保護の有無は `lockReason` ではなく `currentDraft.locked` で判定する＝ユーザーが先に明示ロック〔`lockReason="user"`〕した節を手動編集した場合も「保護中」が正しく出る。翻訳はバッジを出さない＝UI不変。）
 
 - [ ] **Step 2: 保護中の節の単体再生成に確認**（`handleGenerate` は force=true で呼ばれる＝既存ドラフトの「本文を再生成」ボタン。確認済み） — 次を検索:
 ```tsx
@@ -315,7 +332,6 @@ git -c user.name="Will" -c user.email="tachiiri@westernavenu.com" commit -m "$(p
       !isTranslation &&
       currentDraft?.bodyEditedAt &&
       currentDraft.locked &&
-      currentDraft.lockReason === "manual" &&
       !confirm("この節は手動編集され保護中です。再生成すると手動編集が失われます（旧版は変更差分から復元できます）。再生成しますか？")
     ) {
       return;
@@ -323,6 +339,7 @@ git -c user.name="Will" -c user.email="tachiiri@westernavenu.com" commit -m "$(p
     setError(null);
     setLoading(true);
 ```
+（判定は `currentDraft.locked` で行う〔`lockReason` に依存しない〕＝明示ロック中に手動編集した節でも確認が出て編集消失を防ぐ。なお、手動編集後にユーザーが保護を外した節は確認なしで再生成される〔＝解除は再生成の許可と解釈〕。v1 の割り切り。）
 
 - [ ] **Step 3: 型チェック＋ビルド** — （Task 2 Step 5 と同じコマンド）→ tsc なし・build 成功。
 
@@ -393,7 +410,9 @@ git -c user.name="Will" -c user.email="tachiiri@westernavenu.com" commit -m "$(p
                       ) : null}
                       {showBodyDiff && currentDraft.bodyHistory?.length ? (
                         (() => {
-                          const base = currentDraft.bodyHistory[currentDraft.bodyHistory.length - 1];
+                          const hist = currentDraft.bodyHistory;
+                          if (!hist?.length) return null;
+                          const base = hist[hist.length - 1];
                           const lines = diffLines(base.body, currentDraft.body);
                           const stats = diffStats(lines);
                           return (
@@ -437,9 +456,11 @@ git -c user.name="Will" -c user.email="tachiiri@westernavenu.com" commit -m "$(p
 - [ ] **Step 6: 非翻訳の差分** — 編集済み節で「変更差分」トグル→旧版との差分表示→「本文に戻す」で本文へ。
 - [ ] **Step 7: 翻訳モード不変（最重要・要修正1の回帰）** — 翻訳プロジェクトで:
   - 対訳/訳文/変更差分タブが従来通り。訳文編集→タブ切替→戻って保存で正しく訳文が保存される。
+  - **訳文保存後も編集していた節が選択されたまま、対訳表示が崩れない**（`syncSelectedFrom` を足していないことの確認）。
   - **訳文を編集・保存しても、その節が `locked` にならない**（localStorage で `locked` が立たない）＝一括翻訳・波及再翻訳の対象から外れない。保護バッジも出ない。
   - 一括翻訳・（あれば）波及再翻訳が従来通り全対象を処理する。
-- [ ] **Step 8: console エラーが無いこと**（`read_console_messages` onlyErrors）。不具合は該当 Task に戻して修正・再検証。
+- [ ] **Step 8: `/terms` 一括置換の回帰** — 翻訳プロジェクトの `/terms` で用語の一括置換を実行→対象節が `locked` にならない（`replaceDraftBody` は未変更なので理屈上安全だが、Self-Review で「壊さない」と主張しているため実確認する）。
+- [ ] **Step 9: console エラーが無いこと**（`read_console_messages` onlyErrors）。不具合は該当 Task に戻して修正・再検証。
 
 ---
 
@@ -447,6 +468,8 @@ git -c user.name="Will" -c user.email="tachiiri@westernavenu.com" commit -m "$(p
 
 - **未保存ガードは左ツリーのクリックのみ**を守る。編集中に「本文を再生成」「章の折りたたみ」「プロジェクト切替」を行う経路は素通り（v1 割り切り）。
 - 差分の比較元は「直近の退避版1つ」に固定（翻訳のような版セレクタは付けない）。
+- **履歴圧縮に上限時間の cap は設けない**: 5分以内の連続保存が続く限り中間版は積まれず、「AI生成版（＝最初の退避版）1つ＋現行」が残るのが仕様（半日編集し続けても中間版は残らない）。
+- **手動編集後にユーザーが保護を外した節は、確認なしで再生成される**（解除＝再生成の許可と解釈）。
 - リッチテキスト編集はしない（プレーン textarea）。
 
 ## Self-Review（スペック突合）
