@@ -12,6 +12,7 @@ import {
   removeSectionFromOutline,
   replaceDraftBody,
   replaceSelectedOutline,
+  saveManualBodyEdit,
   saveSectionAgentReports,
   setPendingRun,
   setSectionLocked,
@@ -623,11 +624,13 @@ export default function WriterPage() {
 
   function handleSaveBody() {
     if (!selected || !currentDraft) return;
-    const next = replaceDraftBody(
+    // isManualEdit=!isTranslation。翻訳は自動ロックも履歴圧縮もしない＝従来どおり毎回1版積む
+    // （波及・一括翻訳の対象から外さない／訳文の「変更差分」から中間版が消えない）。
+    const next = saveManualBodyEdit(
       selected.chapter.id,
       selected.section.id,
       bodyDraft,
-      "手動編集前",
+      !isTranslation,
     );
     setProject(next);
     setEditingBody(false);
@@ -953,9 +956,9 @@ export default function WriterPage() {
                           : isTranslation ? "このセグメントを翻訳" : "この小見出しの本文を生成"}
                       </button>
                     )}
-                    {isTranslation && currentDraft && !editingBody ? (
+                    {currentDraft && !editingBody ? (
                       <button className="btn" onClick={handleStartEditBody} type="button">
-                        訳文を編集
+                        {isTranslation ? "訳文を編集" : "本文を編集"}
                       </button>
                     ) : null}
                     <button
@@ -1223,6 +1226,23 @@ export default function WriterPage() {
                     <div className="empty-state">
                       まだ本文が生成されていません。「この小見出しの本文を生成」を押してください。
                     </div>
+                  ) : editingBody ? (
+                    <>
+                      <textarea
+                        className="input mono"
+                        rows={18}
+                        value={bodyDraft}
+                        onChange={(e) => setBodyDraft(e.target.value)}
+                      />
+                      <div className="flex" style={{ marginTop: 8, gap: 8 }}>
+                        <button className="btn primary" type="button" onClick={handleSaveBody}>
+                          保存（旧版を退避）
+                        </button>
+                        <button className="btn" type="button" onClick={() => setEditingBody(false)}>
+                          キャンセル
+                        </button>
+                      </div>
+                    </>
                   ) : (
                     <div className="draft-body">{currentDraft.body || "（本文が空です）"}</div>
                   )}
