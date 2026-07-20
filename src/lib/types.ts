@@ -44,6 +44,10 @@ export type SectionDraft = {
   updatedAt: string;
   /** 波及再生成から保護するフラグ（本文を手で直した節） */
   locked?: boolean;
+  /** ロックの由来。手動編集の自動保護="manual"、ユーザーが明示的に掛けた="user" */
+  lockReason?: "user" | "manual";
+  /** 最後に本文を手動編集した時刻（ISO）。「手動編集済み」バッジと自動ロック・履歴圧縮の判定に使う */
+  bodyEditedAt?: string;
   /** 翻訳書モード: 過去の訳文（再生成・手動編集の前に退避。Diff比較の材料。最大10版） */
   bodyHistory?: BodyVersion[];
 };
