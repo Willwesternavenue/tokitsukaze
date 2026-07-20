@@ -10,7 +10,6 @@ import {
   loadProject,
   loadPrompts,
   removeSectionFromOutline,
-  replaceDraftBody,
   replaceSelectedOutline,
   saveManualBodyEdit,
   saveSectionAgentReports,
@@ -252,6 +251,16 @@ export default function WriterPage() {
 
   async function handleGenerate(force = false) {
     if (!project || !selected) return;
+    // 手動編集して保護中の節（非翻訳）を再生成すると編集が失われるため確認する
+    if (
+      force &&
+      !isTranslation &&
+      currentDraft?.bodyEditedAt &&
+      currentDraft.locked &&
+      !confirm("この節は手動編集され保護中です。再生成すると手動編集が失われます（旧版は変更差分から復元できます）。再生成しますか？")
+    ) {
+      return;
+    }
     setError(null);
     setLoading(true);
     const { chapter, section } = selected;
@@ -924,6 +933,11 @@ export default function WriterPage() {
                       第{selected.chapter.chapterNumber}章　{selected.chapter.title}
                     </div>
                     <h2 style={{ fontSize: 15, marginTop: 2 }}>{selected.section.title}</h2>
+                    {!isTranslation && currentDraft?.bodyEditedAt ? (
+                      <span className="badge warn" style={{ fontSize: 10, marginTop: 4, display: "inline-block" }}>
+                        手動編集済み{currentDraft.locked ? "（保護中）" : ""}
+                      </span>
+                    ) : null}
                   </div>
                   <div className="row-actions">
                     <button
