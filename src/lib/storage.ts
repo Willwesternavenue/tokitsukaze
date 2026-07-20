@@ -813,7 +813,11 @@ export function getPrompt(id: string): PromptTemplate {
   return list.find((p) => p.id === id) ?? defaultPrompts.find((p) => p.id === id) ?? defaultPrompts[0];
 }
 
-export function withStyleRules(base: PromptTemplate): PromptTemplate {
+export function withStyleRules(base: PromptTemplate, genre?: import("./types").Genre): PromptTemplate {
+  // 論文モードは「である調・学術文体」を論文仕様（PAPER_STYLE_OPTIONS）＋ prompt-draft-paper で
+  // 指定するため、共通の新聞文体ガイド（共同通信・朝日準拠：一文40〜60字・用字用語など）は注入しない。
+  // 学術文体と規律が衝突するため（ユーザー指摘・2026-07-19）。
+  if (genre === "paper") return base;
   const all = loadPrompts();
   const style = all.find((p) => p.id === "prompt-style-rules");
   if (!style || !style.systemPrompt?.trim()) return base;

@@ -422,7 +422,7 @@ export default function WriterPage() {
     try {
       const prompts = loadPrompts();
       const base = prompts.find((p) => p.id === "prompt-review");
-      const promptTemplate = base ? withStyleRules(base) : undefined;
+      const promptTemplate = base ? withStyleRules(base, project.genre) : undefined;
       const r = await postJson<{
         editorNotes?: string[];
         followUpQuestions?: string[];

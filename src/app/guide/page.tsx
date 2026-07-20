@@ -38,6 +38,13 @@ export default function GuidePage(): JSX.Element {
   const config = getGenreConfig(genre);
   const s = config.stages;
 
+  // 「登場人物」は小説・脚本の比喩。それ以外（論文・ビジネス書等）では中立語にする。
+  const isNovelish = genre === "novel" || genre === "screenplay";
+  const conceptNoun = isNovelish ? "登場人物" : "要素";
+  // 論文モードは文体・引用体裁を「01 素材 → 論文仕様」で指定するため、共通ルールブックは注入されない。
+  const showRulebook = genre !== "paper";
+  const isPaper = genre === "paper";
+
   const flow: { num: string; label: string; href: string; sub?: boolean }[] = [
     { num: "01", label: s.material.navLabel, href: "/" },
     { num: "＋", label: "事前ヒアリング", href: "/outline/interview", sub: true },
@@ -169,13 +176,13 @@ export default function GuidePage(): JSX.Element {
         </div>
       </div>
 
-      {/* 3つの概念 */}
+      {/* 3つ（論文は2つ）の概念 */}
       <div className="panel">
         <div className="panel-header">
-          <h2>3つの登場人物（ここを分けて考えると迷いません）</h2>
+          <h2>{showRulebook ? "3つ" : "2つ"}の{conceptNoun}（ここを分けて考えると迷いません）</h2>
         </div>
         <div className="panel-body">
-          <div className="grid grid-3">
+          <div className={showRulebook ? "grid grid-3" : "grid grid-2"}>
             <div className="guide-concept">
               <h3>AIスタッフ</h3>
               <div className="guide-concept-tag">＝ 実行される役割</div>
@@ -199,17 +206,73 @@ export default function GuidePage(): JSX.Element {
                 。
               </p>
             </div>
-            <div className="guide-concept">
-              <h3>ルールブック</h3>
-              <div className="guide-concept-tag">＝ 注入される編集方針</div>
-              <p style={{ margin: 0, fontSize: 12 }}>
-                校正・文体・てにをは・ですます調などの方針。単独では実行されず、各スタッフに自動で注入されます。
-                <Link href="/staff">AIスタッフ</Link> 画面の「ルールブック」欄で編集できます。
-              </p>
-            </div>
+            {showRulebook ? (
+              <div className="guide-concept">
+                <h3>ルールブック</h3>
+                <div className="guide-concept-tag">＝ 注入される編集方針</div>
+                <p style={{ margin: 0, fontSize: 12 }}>
+                  校正・文体・てにをは・ですます調などの方針。単独では実行されず、各スタッフに自動で注入されます。
+                  <Link href="/staff">AIスタッフ</Link> 画面の「ルールブック」欄で編集できます。
+                </p>
+              </div>
+            ) : null}
           </div>
+          {isPaper ? (
+            <p className="muted" style={{ fontSize: 11, marginTop: 10, marginBottom: 0 }}>
+              ※ 論文モードでは文体（である調・学術）と引用体裁を「01 素材 → 論文仕様」で指定するため、
+              共通ルールブック（新聞文体ガイド）は本文生成・レビューに注入されません。
+            </p>
+          ) : null}
         </div>
       </div>
+
+      {/* 引用・参考文献の使い方（論文モードのみ） */}
+      {isPaper ? (
+        <div className="panel">
+          <div className="panel-header">
+            <h2>引用・参考文献の使い方（論文モード）</h2>
+          </div>
+          <div className="panel-body dense">
+            <p style={{ marginTop: 0 }}>
+              登録した文献だけを本文で引用し、Word出力時に投稿先の体裁へ自動整形します。次の順番で使います。
+            </p>
+            <ol style={{ margin: "0 0 10px", paddingLeft: 20, fontSize: 13, lineHeight: 1.9 }}>
+              <li>
+                <strong>文献を登録する</strong> ―{" "}
+                <Link href="/references">参考文献・文献カルテ</Link> で、引用したい文献（著者・年・出典など）を登録します。
+                <span className="muted">（登録した文献だけが引用に使えます）</span>
+              </li>
+              <li>
+                <strong>引用スタイルを選ぶ</strong> ― <Link href="/">01 素材</Link> の「論文仕様 → 引用・参考文献の体裁」で
+                APA／IEEE／SIST 02・和文誌／MLA から投稿先に合うものを選びます。
+              </li>
+              <li>
+                <strong>本文を書く</strong> ― <Link href="/writer">執筆</Link> で本文を生成すると、AIは登録文献にだけ
+                引用マーカー〔著者, 年〕を付けます。登録が無い箇所は架空文献を作らず〔要出典〕と書きます。
+              </li>
+              <li>
+                <strong>Wordで出力する</strong> ― 「全体Wordを出力」すると、本文マーカーが選んだ体裁へ変換され
+                （IEEEなら出現順に <code>[1][2]</code>、MLAなら年を省略）、末尾に<strong>参考文献リスト</strong>が付きます。
+              </li>
+            </ol>
+            <details className="guide-faq">
+              <summary>引用マーカーが〔要出典〕のままになる</summary>
+              <div className="guide-faq-body">
+                その主張に対応する文献が未登録です。<Link href="/references">参考文献</Link> に登録すれば、
+                本文を作り直したときに〔著者, 年〕へ置き換わります。文献の実在確認まではAIは行いません（登録内容がそのまま使われます）。
+              </div>
+            </details>
+            <details className="guide-faq">
+              <summary>番号（IEEE）の付き方を変えたい／揃わない</summary>
+              <div className="guide-faq-body">
+                番号はAIに任せず、本文に出てきた順（未引用の文献は登録順で後ろ）に自動採番されます。
+                順番を変えたいときは本文の引用順を調整してください。体裁そのものを変えるなら
+                <Link href="/">01 素材</Link> の引用スタイルを選び直します。
+              </div>
+            </details>
+          </div>
+        </div>
+      ) : null}
 
       {/* 困ったとき */}
       <div className="panel">
