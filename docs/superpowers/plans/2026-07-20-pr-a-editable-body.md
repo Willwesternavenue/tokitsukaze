@@ -13,7 +13,7 @@
 - **テストランナーは無い**。検証は `npx tsc --noEmit`、`npx next build`、ブラウザ実機、純粋ロジックは scratchpad の node スクリプト。
 - **tsc/build は Node 24**: 各コマンド前に `export NVM_DIR="$HOME/.nvm"; . "$NVM_DIR/nvm.sh"; nvm use 24.15.0 >/dev/null`。build 成功＝`✓ Generating static pages`（`unpdf` warning は既存・無視）。
 - **コミット**: `git -c user.name="Will" -c user.email="tachiiri@westernavenu.com" commit`、本文末尾 `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`。scratchpad スクリプトはコミットしない。
-- **翻訳フロー不変（最重要）**: 翻訳モードの対訳/再翻訳/一括翻訳/訳文編集の挙動を変えない。**担保方法＝手動編集の保存で `autoLock=!isTranslation` を渡し、翻訳では自動ロック・保護バッジを付けない**（Task 2・Task 3・Task 4 で実装、Task 6 Step 7 で検証）。
+- **翻訳フロー不変（最重要）**: 翻訳モードの対訳/再翻訳/一括翻訳/訳文編集の挙動を変えない。**担保方法＝手動編集の保存で `isManualEdit=!isTranslation` を渡し、翻訳では自動ロック・保護バッジを付けない**（Task 2・Task 3・Task 4 で実装、Task 6 Step 7 で検証）。
 - **決定（設計書＋本レビュー）**: Q2=A（**非翻訳の**手動編集は初回のみ自動保護。`bodyEditedAt` 未設定かつ未ロックのときだけ `locked=true`/`lockReason="manual"`。ユーザーが解除した後の再編集では自動ロックしない）。旧版は `bodyHistory`（最大10版）。**連続手動編集はまとめる**（前回の手動保存＝`d.bodyEditedAt` から5分以内なら履歴を積み増さない）。ただし**この圧縮は `isManualEdit`（＝非翻訳）のときだけ**適用し、翻訳は毎回1版積む（従来どおり）。
 - `replaceDraftBody`（既存）は /terms の一括置換でも使う。**変更せず**、手動編集用に別関数 `saveManualBodyEdit` を新設。
 - **文字列アンカー必須**: Task 3〜5 の置換は、下記に引用した既存コード文字列を検索して置換する。行番号は参考値。
@@ -57,7 +57,7 @@ git -c user.name="Will" -c user.email="tachiiri@westernavenu.com" commit -m "$(p
 
 ---
 
-## Task 2: storage に `saveManualBodyEdit(…, autoLock)` と `setSectionLocked` の reason 対応
+## Task 2: storage に `saveManualBodyEdit(…, isManualEdit)` と `setSectionLocked` の reason 対応
 
 **Files:** Modify `src/lib/storage.ts`（`setSectionLocked`、`replaceDraftBody` の直後に新関数）
 
@@ -186,12 +186,12 @@ export function saveManualBodyEdit(
 - [ ] **Step 6: コミット**
 ```bash
 git add src/lib/storage.ts
-git -c user.name="Will" -c user.email="tachiiri@westernavenu.com" commit -m "$(printf 'feat: saveManualBodyEdit（履歴圧縮＝bodyEditedAt基準・autoLock引数で翻訳は保護しない）と setSectionLocked の reason 対応\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>')"
+git -c user.name="Will" -c user.email="tachiiri@westernavenu.com" commit -m "$(printf 'feat: saveManualBodyEdit（履歴圧縮＝bodyEditedAt基準・isManualEdit引数で翻訳は保護・圧縮しない）と setSectionLocked の reason 対応\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>')"
 ```
 
 ---
 
-## Task 3: 本文編集を全ジャンルに開放（ボタン・textarea・保存＝autoLockは非翻訳のみ）
+## Task 3: 本文編集を全ジャンルに開放（ボタン・textarea・保存＝isManualEditは非翻訳のみ）
 
 **Files:** Modify `src/app/writer/page.tsx`
 
@@ -201,7 +201,7 @@ git -c user.name="Will" -c user.email="tachiiri@westernavenu.com" commit -m "$(p
 
 - [ ] **Step 1: import に `saveManualBodyEdit` を追加** — storage からの import 群（`replaceDraftBody,` がある塊）に `saveManualBodyEdit,` を足す。
 
-- [ ] **Step 2: `handleSaveBody` を付け替え（autoLock=非翻訳）** — 次を検索して置換:
+- [ ] **Step 2: `handleSaveBody` を付け替え（isManualEdit=非翻訳）** — 次を検索して置換:
 
 置換前:
 ```tsx
@@ -482,7 +482,7 @@ git -c user.name="Will" -c user.email="tachiiri@westernavenu.com" commit -m "$(p
 
 - **SectionDraft.bodyEditedAt / lockReason**（spec P1）→ Task 1 ✅
 - **本文編集を全ジャンルに開放**（spec PR-A）→ Task 3 ✅
-- **翻訳フロー不変**（Global Constraint・最重要）→ **設計担保: `handleSaveBody` が `autoLock=!isTranslation`（Task 3 Step 2）＋ バッジ/確認を `!isTranslation` で分岐（Task 4）**。検証 Task 6 Step 7 ✅（← 今回の要修正1の是正。設計パスが Task に存在する）
+- **翻訳フロー不変**（Global Constraint・最重要）→ **設計担保: `handleSaveBody` が `isManualEdit=!isTranslation`（Task 3 Step 2）＋ バッジ/確認を `!isTranslation` で分岐（Task 4）**。検証 Task 6 Step 7 ✅（← 今回の要修正1の是正。設計パスが Task に存在する）
 - **非翻訳の初回のみ自動保護・解除の記憶**（spec Q2=A・P1）→ Task 2（判定）＋ Task 4（バッジ）＋ Task 6 Step 2 ✅
 - **bodyHistory 圧縮（bodyEditedAt 基準）**（spec P3・要修正2）→ Task 2 ✅（scratchpad に古い updatedAt ケース有）
 - **未保存のまま節切替の確認**（spec P2）→ Task 5 ✅
@@ -490,4 +490,4 @@ git -c user.name="Will" -c user.email="tachiiri@westernavenu.com" commit -m "$(p
 - **非翻訳の差分ビュー**（spec PR-A）→ Task 5 ✅
 - `replaceDraftBody` を壊さず別関数（/terms 一括置換は自動ロックさせない）→ Task 2 ✅
 
-Placeholder スキャン: 曖昧語なし・全コードブロック実体あり。文字列アンカーで Task 間の行ズレを回避。型整合: `editingBody: boolean`（据え置き）、`saveManualBodyEdit(chapterId, sectionId, newBody, autoLock)`、`setSectionLocked(…, reason?)`、`showBodyDiff`、`handleSelectSection` は各 Task 間で一致。
+Placeholder スキャン: 曖昧語なし・全コードブロック実体あり。文字列アンカーで Task 間の行ズレを回避。型整合: `editingBody: boolean`（据え置き）、`saveManualBodyEdit(chapterId, sectionId, newBody, isManualEdit)`、`setSectionLocked(…, reason?)`、`showBodyDiff`、`handleSelectSection` は各 Task 間で一致。
