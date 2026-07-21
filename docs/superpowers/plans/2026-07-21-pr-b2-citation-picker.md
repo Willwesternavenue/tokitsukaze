@@ -33,17 +33,22 @@ Run 各コマンド。想定と違えば実装を止めて報告:
 - `grep -c 'project.genre === "paper"' src/app/writer/page.tsx` → **1以上**（PR-B1 のチェックリストで既に使用＝`genre`/`"paper"` 実在）
 - `grep -c ') : editingBody ? (' src/app/writer/page.tsx` → **1**（非翻訳ブロックの一意アンカー。`保存（旧版を退避）` は2件あるので使わない）
 - `grep -nE '\.nav-dropdown(-menu|-item)? \{' src/app/globals.css` → 3クラスとも定義あり（`.nav-dropdown{position:relative}` / `.nav-dropdown-menu{position:absolute;left:0}`）。メニューは既定 `left:0` なので右寄せは inline style で `left:"auto", right:0` を指定する
+- `sed -n '/export type Reference = {/,/^}/p' src/lib/types.ts` → フィールド実名を確認（確認済み: `id`/`title`/`author?`/`source?`/`year?`/`url?`/`notes?`）。`title` 属性・マーカーの組み立てをこの実名に合わせる（`authors:string[]` 等ではない）
+- `grep -c '"Escape"' src/app/writer/page.tsx` → **0**（確認済み: writer に既存 Escape/keydown ハンドラなし＝Step 3 の Esc listener は競合しない）
 
 - [ ] **Step 1: import と state / ref を追加**
 
-import に追加:
+import に追加（`authorYearMarker`、および `react` の import に `useLayoutEffect` を足す）:
 ```tsx
 import { authorYearMarker } from "@/lib/citation";
 ```
+`react` の既存 import `import { useEffect, useMemo, useRef, useState } from "react";` に `useLayoutEffect` を加える → `import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";`
+
 `const [bodyDraft, setBodyDraft] = useState("");` を検索し、その直後に:
 ```tsx
   const bodyTextareaRef = useRef<HTMLTextAreaElement>(null);
   const citePickerRef = useRef<HTMLDivElement>(null);
+  const pendingCaretRef = useRef<number | null>(null);
   const [citePickerOpen, setCitePickerOpen] = useState(false);
   // 本文編集の最後のキャレット位置（ピッカーのボタンでフォーカスが外れても保持する）
   const [bodySel, setBodySel] = useState<{ start: number; end: number }>({ start: 0, end: 0 });
@@ -74,9 +79,9 @@ import { authorYearMarker } from "@/lib/citation";
   }
 ```
 
-- [ ] **Step 3: 挿入ハンドラと外側クリックで閉じる useEffect を追加**
+- [ ] **Step 3: 挿入ハンドラと2つのフックを追加（すべて同じアンカーの直前へ）**
 
-`function handleSaveBody() {` を検索し、その**直前**に追加:
+**アンカーを1つに統一**する。`function handleSaveBody() {` を検索し、その**直前**に、以下（ハンドラ2つ＋フック2つ）をまとめて追加する:
 ```tsx
   // 本文編集: キャレット位置を保持（ピッカーのボタン押下でフォーカスが外れる前の位置を使う）
   function rememberBodySel() {
@@ -92,21 +97,27 @@ import { authorYearMarker } from "@/lib/citation";
     const start = Math.min(bodySel.start, bodyDraft.length);
     const end = Math.min(Math.max(bodySel.end, start), bodyDraft.length);
     const next = bodyDraft.slice(0, start) + marker + bodyDraft.slice(end);
-    setBodyDraft(next);
-    setCitePickerOpen(false);
     const caret = start + marker.length;
+    pendingCaretRef.current = caret; // 再レンダー後に useLayoutEffect でキャレットを復元
+    setBodyDraft(next);
     setBodySel({ start: caret, end: caret });
-    requestAnimationFrame(() => {
-      const ta = bodyTextareaRef.current;
-      if (ta) {
-        ta.focus();
-        ta.setSelectionRange(caret, caret);
-      }
-    });
+    setCitePickerOpen(false);
   }
-```
-外側クリック/Escで閉じる（Nav の nav-dropdown と同じ作法）。`useEffect(() => {` が並ぶ既存フックの近く（コンポーネント上部の他の useEffect の後）に追加:
-```tsx
+
+  // 挿入で bodyDraft を差し替えた後、DOM 反映直後にキャレットをマーカー直後へ戻す
+  // （rAF だと setBodyDraft の再レンダー前に走り得るため useLayoutEffect + [bodyDraft] で確実にする）
+  useLayoutEffect(() => {
+    const caret = pendingCaretRef.current;
+    if (caret == null) return;
+    pendingCaretRef.current = null;
+    const ta = bodyTextareaRef.current;
+    if (ta) {
+      ta.focus();
+      ta.setSelectionRange(caret, caret);
+    }
+  }, [bodyDraft]);
+
+  // ピッカーを外側クリック / Esc で閉じる（Nav の nav-dropdown と同じ作法。既存 Escape ハンドラは無い＝競合なし）
   useEffect(() => {
     if (!citePickerOpen) return;
     function onClickOutside(e: MouseEvent) {
@@ -130,14 +141,30 @@ import { authorYearMarker } from "@/lib/citation";
 
 開いたまま次回編集で開いた状態から始まる事故を防ぐ。3箇所を修正:
 
-(a) `handleSaveBody` — `setEditingBody(false);` を検索（`handleSaveBody` 内）し、その直後に `setCitePickerOpen(false);` を足す:
+(a) `handleSaveBody` — 次の**2行組**（`setProject(next);` ＋ `setEditingBody(false);`＝この並びは L659-660 のみで一意。`grep -c 'setProject(next);' `は11件だが2行組は1件）を検索して置換:
+
+置換前:
+```tsx
+    setProject(next);
+    setEditingBody(false);
+  }
+```
+置換後:
 ```tsx
     setProject(next);
     setEditingBody(false);
     setCitePickerOpen(false);
   }
 ```
-(b) `handleSelectSection` — `setEditingBody(false);` を検索（`handleSelectSection` 内、`setShowBodyDiff(false);` の並び）し、`setCitePickerOpen(false);` を足す:
+(b) `handleSelectSection` — `setShowBodyDiff(false);`（1箇所で一意）を含む次のブロックを検索して置換:
+
+置換前:
+```tsx
+    setEditingBody(false);
+    setShowBodyDiff(false);
+    setSelected({ chapter, section });
+```
+置換後:
 ```tsx
     setEditingBody(false);
     setShowBodyDiff(false);
@@ -182,7 +209,9 @@ import { authorYearMarker } from "@/lib/citation";
                         value={bodyDraft}
                         onChange={(e) => setBodyDraft(e.target.value)}
                         onSelect={rememberBodySel}
-                        onKeyUp={rememberBodySel}
+                        onKeyUp={(e) => {
+                          if (!e.nativeEvent.isComposing) rememberBodySel();
+                        }}
                         onClick={rememberBodySel}
                       />
                       <div className="flex" style={{ marginTop: 8, gap: 8, alignItems: "flex-start" }}>
@@ -264,9 +293,10 @@ git -c user.name="Will" -c user.email="tachiiri@westernavenu.com" commit -m "$(p
 
 論文プロジェクト・文献1件以上・本文生成済みの節で行う。
 
-- [ ] **Step 1: 表示条件** — 論文＋文献登録済みの節で「本文を編集」→「引用を挿入 ▾」が出る。文献0件では出ない。
-- [ ] **Step 2: カーソル位置に挿入** — textarea 本文の**途中**にキャレットを置く（クリック）→「引用を挿入」→ 文献を選ぶ →「その位置」に `authorYearMarker`（例 `〔Devlin, 2019〕`）が入る（末尾追記でない）。★（節紐付け）が上に並ぶ。
+- [ ] **Step 1: 表示条件と配置** — 論文＋文献登録済みの節で「本文を編集」→「引用を挿入 ▾」が**ボタン列の右端**に出る（`marginLeft:auto`）。文献0件では出ない。開いたメニューが textarea の下に潜らず前面に出る（z-index/位置の見た目確認）。
+- [ ] **Step 2: カーソル位置に挿入＋キャレット復元** — textarea 本文の**途中**にキャレットを置く（クリック）→「引用を挿入」→ 文献を選ぶ →「その位置」に `authorYearMarker`（例 `〔Devlin, 2019〕`）が入る（末尾追記でない）。**挿入直後キャレットがマーカー直後にあり、続けて入力するとマーカーの後ろに入る**（useLayoutEffect 復元の確認）。★（節紐付け）が上に並ぶ。
 - [ ] **Step 3: 末尾初期化と selectionStart 保持** — 編集開始直後（キャレット未移動）に挿入 → **本文末尾**に入る（先頭でない）。中ほどをクリックしてから挿入 → その位置に入る（`bodySel` 保持の確認）。
+- [ ] **Step 3b: 日本語IME入力後の挿入** — 本文中ほどに日本語を変換確定入力してから「引用を挿入」→ 位置がずれず、確定文字の直後（onSelectで更新された位置）に入る（IME中の onKeyUp を無視している確認）。
 - [ ] **Step 4: ピッカーの閉じ挙動** — 開いた状態で (a) textarea をクリック→閉じる、(b) Esc→閉じる、(c) 保存→編集終了後もう一度「本文を編集」→ピッカーは閉じた状態で始まる、(d) キャンセル→同上、(e) 別節へ移動→同上。
 - [ ] **Step 5: 保存と整合** — 挿入後「保存」→ `SectionDraft.body` に挿入マーカーが残る（論文なので保存で自動保護 `locked=true`）。挿入マーカーは正準形なので本文に正しく入ることを確認（`citation-check`・Word変換は既存パイプライン）。
 - [ ] **Step 6: 非論文で非表示（二重ガードの確認）** — 翻訳の訳文編集では「引用を挿入」が出ない。これは `genre` 判定に加え、そもそもこの UI が非翻訳ブロックにしか無いため＝**二重に守られていることの確認**。
@@ -286,8 +316,10 @@ git -c user.name="Will" -c user.email="tachiiri@westernavenu.com" commit -m "$(p
 
 - **挿入ピッカー（論文・文献1件以上でのみ表示）** → Task 1 Step 5 ✅
 - **カーソル位置に `authorYearMarker` を挿入（スタイル非依存）** → Task 1 Step 3/5 ✅
-- **selectionStart 保持（onSelect保持＋onMouseDown preventDefault）＋末尾初期化** → Task 1 Step 2/3/5、要修正2対応 ✅
-- **ピッカーの閉じ経路（3exit＋外側クリック＋Esc）** → Task 1 Step 3/4、要修正1対応 ✅
+- **selectionStart 保持（onSelect保持＋onMouseDown preventDefault）＋末尾初期化＋IMEガード** → Task 1 Step 2/3/5、要修正2対応 ✅
+- **キャレット復元は useLayoutEffect+pendingCaretRef（rAF不使用）** → Task 1 Step 1/3、Task 2 Step 2 で検証 ✅
+- **ピッカーの閉じ経路（3exit〔一意アンカー〕＋外側クリック＋Esc、既存Escハンドラ無し）** → Task 1 Step 3/4、要修正1対応 ✅
+- **Reference フィールド実名の裏取り** → Task 1 Step 0 ✅
 - **PR-B1 依存明記＋★非stale** → Global Constraints ✅
 - **裏取り（genre/CSS/アンカー一意）** → Task 1 Step 0 ✅
 - **保存はPR-A流用・整合は既存パイプライン** → Task 1（handleSaveBody は close 追加のみ）＋ Task 2 Step 5 ✅
