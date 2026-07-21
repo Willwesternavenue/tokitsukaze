@@ -1,6 +1,43 @@
 # アキカゼ出版AI — 引き継ぎドキュメント
 
-最終更新: 2026-07-13
+最終更新: 2026-07-21
+
+---
+
+## 🔴 現在進行中（2026-07-21）: 論文モードの「引用・脚注・参考文献」アーク
+
+論文モードの引用機能を段階実装中。**本番 main には PR #1〜#8 が全てマージ済み**（引用スタイル選択・参考文献リストWord出力・節への文献紐付け・本文の手動編集など）。
+
+### 設計の全体像（ブレインストーミング結論）
+- Q1=**C**（節への文献紐付け＋手動マーカー挿入の両方）、Q2=**A**（手動編集は初回のみ自動保護）。
+- 引用は **HINT型**、スコープは**論文優先**。
+- 設計書: [`docs/superpowers/specs/2026-07-20-body-editing-and-section-citations-design.md`](docs/superpowers/specs/2026-07-20-body-editing-and-section-citations-design.md)（本文編集＋節引用）
+
+### 完了（main マージ済み）
+- **PR-B1**（#7）: `Section.referenceIds` で節に文献紐付け → `buildPaperContext(project, section)` で優先引用注入（孤児ID除外）＋ /writer チェックリスト。
+- **PR-A**（#8）: 本文の手動編集を全ジャンルに開放。`saveManualBodyEdit(…, isManualEdit)`（=非翻訳のみ自動保護＋履歴圧縮）／`SectionDraft.bodyEditedAt`・`lockReason`／未保存切替の確認／非翻訳の変更差分／**翻訳フロー不変**。`finishSectionDraft` の再生成前退避を全ジャンルに拡張済み。
+
+### ▶ 次にやる: PR-B2（本文エディタの引用挿入ピッカー）— **計画完成・未実装**
+- **計画書**: [`docs/superpowers/plans/2026-07-21-pr-b2-citation-picker.md`](docs/superpowers/plans/2026-07-21-pr-b2-citation-picker.md)（レビュー2巡反映済み・実装可）
+- **ブランチ**: `claude/pr-b2-citation-picker`（push済み・docs 3コミットのみ、コードは未着手）。**別スレッドはこのブランチを checkout して再開する**（main には計画がまだ無い）。
+- **中身**: 論文の本文エディタ（PR-A の textarea）に「引用を挿入 ▾」ピッカー。`authorYearMarker(ref)` をカーソル位置へ挿入（インライン式・スタイル非依存）。selectionStart 保持（onSelect＋onMouseDown preventDefault）・キャレット復元は `useLayoutEffect`+`pendingCaretRef`・IMEガード・外側クリック/Escで閉じる・節紐付け文献を★で上に。全て文字列アンカー化・裏取り済み。
+- **再開手順**: `git checkout claude/pr-b2-citation-picker` → superpowers:subagent-driven-development で計画を Task 1（実装）→ Task 2（コントローラのブラウザ検証）実行 → 最終レビュー（opus）→ PR。
+
+### その次: PR-B3（脚注モード）— **設計書 未作成**
+Word の「Footnotes/Endnotes」相当。シカゴ ノート式・和文脚注（人文/和文誌で標準）。PR-B2 とは独立（共有点は本文の正準マーカーのみ）。**設計書から起こす**。実装前調査で押さえた事実:
+1. `docx@8.5` は脚注対応（`FootnoteReferenceRun` 関数エクスポート済み）。`Document` は `sections` のみ渡しており `footnotes` は同列トップレベルオプション＝**キー追加でOK**（ただし本文レンダ中に脚注エントリ収集＋id採番の配線が要る）。
+2. 参考文献欄は `exportProjectDocx`・`exportPreprintDocx` に**あり**、`exportSectionDocx`（単一節）には**無し**。
+3. `citationStyle = "apa"|"ieee"|"sist02"|"mla"`（既定apa、`PaperMeta.citationStyle?` optional、既存 localStorage は undefined 多く apa フォールバック）。union 拡張で既存データ無傷・マイグレ不要。
+- 波及範囲: `citationStyle`型・`citation.ts`フォーマッタ・`docx.ts`出力分岐・`citation-check`。Word出力の回帰は「4スタイル × 3出力」で別規模。
+
+### 作業の進め方（このアークで確立した作法）
+- **skills**: brainstorming → writing-plans → subagent-driven-development（`.claude/plugins/.../superpowers/6.0.3/skills/subagent-driven-development/scripts/` の `task-brief`・`review-package` を使用）。進捗 ledger は `.superpowers/sdd/progress.md`（git非追跡）。
+- **モデル**: 自明な型追加=haiku、統合=sonnet、最終全ブランチレビュー=opus。
+- **ユーザーは全計画を精査するレビュアー**。文字列アンカー一意性・非スコープ明記・翻訳フロー不変・selectionStart等を毎回鋭く指摘する。**計画は実装前にユーザーレビューを通すこと**。
+- **検証**: テストランナー無し → `npx tsc --noEmit`＋`npx next build`＋ブラウザ実機（＋純粋ロジックは scratchpad node）。**ビルドは Node 24 必須**（`source ~/.nvm/nvm.sh && nvm use 24.15.0` 前置。v18だと落ちる）。
+- **本番未検証（ローカルにAIキー無し）**: 要旨/予稿/文献カルテのAI実生成・引用の実生成・本文再生成の履歴復元。マージ後に本番で要確認。
+
+---
 
 ## これは何か
 
