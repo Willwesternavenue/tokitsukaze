@@ -119,16 +119,16 @@ export async function finishSectionDraft(runId: string): Promise<Project> {
 
   // 適用先は「現在の」プロジェクト（復帰時も含めて最新を読む）
   const current = loadProject();
-  if (current.genre === "translation") {
-    const old = current.generatedSections.find(
-      (d) => d.chapterId === draft.chapterId && d.sectionId === draft.sectionId,
-    );
-    if (old?.body) {
-      draft.bodyHistory = [
-        ...(old.bodyHistory ?? []),
-        { savedAt: old.updatedAt, body: old.body, note: "再生成前" },
-      ].slice(-10);
-    }
+  // 再生成前の本文を履歴に退避（全ジャンル）。手動編集を再生成で失っても「変更差分」から復元できるようにする
+  // （非翻訳でも本文編集＝bodyHistory を持つため。再生成の確認ダイアログが約束する復元を実際に成立させる）。
+  const old = current.generatedSections.find(
+    (d) => d.chapterId === draft.chapterId && d.sectionId === draft.sectionId,
+  );
+  if (old?.body) {
+    draft.bodyHistory = [
+      ...(old.bodyHistory ?? []),
+      { savedAt: old.updatedAt, body: old.body, note: "再生成前" },
+    ].slice(-10);
   }
 
   upsertDraft(draft);
