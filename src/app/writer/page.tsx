@@ -83,6 +83,7 @@ export default function WriterPage() {
   const [trView, setTrView] = useState<TranslationView>("bilingual");
   const [editingBody, setEditingBody] = useState(false);
   const [bodyDraft, setBodyDraft] = useState("");
+  const [showBodyDiff, setShowBodyDiff] = useState(false);
   const [diffBaseIdx, setDiffBaseIdx] = useState<number | null>(null); // null = 最新の旧版
   // 翻訳書モード: 一括翻訳
   const [batch, setBatch] = useState<BatchState | null>(null);
@@ -631,6 +632,20 @@ export default function WriterPage() {
     setTrView("target");
   }
 
+  function handleSelectSection(chapter: Chapter, section: Section) {
+    if (
+      editingBody &&
+      currentDraft &&
+      bodyDraft !== currentDraft.body &&
+      !confirm("未保存の編集があります。破棄して移動しますか？")
+    ) {
+      return;
+    }
+    setEditingBody(false);
+    setShowBodyDiff(false);
+    setSelected({ chapter, section });
+  }
+
   function handleSaveBody() {
     if (!selected || !currentDraft) return;
     // isManualEdit=!isTranslation。翻訳は自動ロックも履歴圧縮もしない＝従来どおり毎回1版積む
@@ -895,7 +910,7 @@ export default function WriterPage() {
                         <li
                           key={s.id}
                           className={`section ${isActive ? "active" : ""} ${hasDraft ? "has-draft" : ""}`}
-                          onClick={() => setSelected({ chapter: c, section: s })}
+                          onClick={() => handleSelectSection(c, s)}
                         >
                           <span className="dot" />
                           <span style={{ flex: 1 }}>
@@ -1258,7 +1273,39 @@ export default function WriterPage() {
                       </div>
                     </>
                   ) : (
-                    <div className="draft-body">{currentDraft.body || "（本文が空です）"}</div>
+                    <>
+                      {currentDraft.bodyHistory?.length ? (
+                        <button
+                          className="btn sm"
+                          type="button"
+                          onClick={() => setShowBodyDiff((v) => !v)}
+                          style={{ marginBottom: 8 }}
+                        >
+                          {showBodyDiff ? "本文に戻す" : `変更差分（${currentDraft.bodyHistory.length}版）`}
+                        </button>
+                      ) : null}
+                      {showBodyDiff && currentDraft.bodyHistory?.length ? (
+                        (() => {
+                          const hist = currentDraft.bodyHistory;
+                          if (!hist?.length) return null;
+                          const base = hist[hist.length - 1];
+                          const lines = diffLines(base.body, currentDraft.body);
+                          const stats = diffStats(lines);
+                          return (
+                            <div className="draft-body">
+                              <div className="muted" style={{ fontSize: 11, marginBottom: 6 }}>
+                                前の版（{base.savedAt.slice(0, 16).replace("T", " ")}）との差分　+{stats.added} / -{stats.removed}
+                              </div>
+                              {lines.map((ln, i) => (
+                                <div key={i} className={`diff-line ${ln.type}`}>{ln.text || " "}</div>
+                              ))}
+                            </div>
+                          );
+                        })()
+                      ) : (
+                        <div className="draft-body">{currentDraft.body || "（本文が空です）"}</div>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
