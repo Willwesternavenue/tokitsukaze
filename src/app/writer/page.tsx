@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   addSectionToChapter,
@@ -33,6 +33,7 @@ import { postJson, startAndPollRun } from "@/lib/apiClient";
 import type { SectionsWorkflowResult } from "@/workflows/sections";
 import { buildScreenplayExtraContext, getGenreConfig } from "@/lib/genreConfig";
 import { diffLines, diffStats } from "@/lib/diff";
+import { authorYearMarker } from "@/lib/citation";
 import {
   finishSectionDraft,
   generateSectionDraft,
@@ -83,6 +84,12 @@ export default function WriterPage() {
   const [trView, setTrView] = useState<TranslationView>("bilingual");
   const [editingBody, setEditingBody] = useState(false);
   const [bodyDraft, setBodyDraft] = useState("");
+  const bodyTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const citePickerRef = useRef<HTMLDivElement>(null);
+  const pendingCaretRef = useRef<number | null>(null);
+  const [citePickerOpen, setCitePickerOpen] = useState(false);
+  // 本文編集の最後のキャレット位置（ピッカーのボタンでフォーカスが外れても保持する）
+  const [bodySel, setBodySel] = useState<{ start: number; end: number }>({ start: 0, end: 0 });
   const [showBodyDiff, setShowBodyDiff] = useState(false);
   const [diffBaseIdx, setDiffBaseIdx] = useState<number | null>(null); // null = 最新の旧版
   // 翻訳書モード: 一括翻訳
@@ -216,6 +223,39 @@ export default function WriterPage() {
       project.sectionAgentReports?.[`${selected.chapter.id}::${selected.section.id}`] ?? []
     );
   }, [selected, project]);
+
+  // 挿入で bodyDraft を差し替えた後、DOM 反映直後にキャレットをマーカー直後へ戻す
+  // （rAF だと setBodyDraft の再レンダー前に走り得るため useLayoutEffect + [bodyDraft] で確実にする）
+  // NB: フックは早期 return より前に置くこと（handleSaveBody は return 群の後に定義されるため、そこに置くと Rules of Hooks 違反になる）
+  useLayoutEffect(() => {
+    const caret = pendingCaretRef.current;
+    if (caret == null) return;
+    pendingCaretRef.current = null;
+    const ta = bodyTextareaRef.current;
+    if (ta) {
+      ta.focus();
+      ta.setSelectionRange(caret, caret);
+    }
+  }, [bodyDraft]);
+
+  // ピッカーを外側クリック / Esc で閉じる（Nav の nav-dropdown と同じ作法。既存 Escape ハンドラは無い＝競合なし）
+  useEffect(() => {
+    if (!citePickerOpen) return;
+    function onClickOutside(e: MouseEvent) {
+      if (citePickerRef.current && !citePickerRef.current.contains(e.target as Node)) {
+        setCitePickerOpen(false);
+      }
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setCitePickerOpen(false);
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClickOutside);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [citePickerOpen]);
 
   if (!project) {
     return (
@@ -628,6 +668,8 @@ export default function WriterPage() {
   function handleStartEditBody() {
     if (!currentDraft) return;
     setBodyDraft(currentDraft.body);
+    // 挿入の既定位置は本文末尾（キャレット未移動でも先頭に入らないように）。bodySel は非翻訳の挿入専用で翻訳に無害
+    setBodySel({ start: currentDraft.body.length, end: currentDraft.body.length });
     setEditingBody(true);
     setTrView("target");
   }
@@ -643,7 +685,29 @@ export default function WriterPage() {
     }
     setEditingBody(false);
     setShowBodyDiff(false);
+    setCitePickerOpen(false);
     setSelected({ chapter, section });
+  }
+
+  // 本文編集: キャレット位置を保持（ピッカーのボタン押下でフォーカスが外れる前の位置を使う）
+  function rememberBodySel() {
+    const ta = bodyTextareaRef.current;
+    if (ta) setBodySel({ start: ta.selectionStart, end: ta.selectionEnd });
+  }
+
+  // 引用マーカー〔著者, 年〕を保持したキャレット位置に挿入する
+  function insertCitation(refId: string) {
+    const ref = (project?.references ?? []).find((r) => r.id === refId);
+    if (!ref) return;
+    const marker = authorYearMarker(ref);
+    const start = Math.min(bodySel.start, bodyDraft.length);
+    const end = Math.min(Math.max(bodySel.end, start), bodyDraft.length);
+    const next = bodyDraft.slice(0, start) + marker + bodyDraft.slice(end);
+    const caret = start + marker.length;
+    pendingCaretRef.current = caret; // 再レンダー後に useLayoutEffect でキャレットを復元
+    setBodyDraft(next);
+    setBodySel({ start: caret, end: caret });
+    setCitePickerOpen(false);
   }
 
   function handleSaveBody() {
@@ -658,6 +722,7 @@ export default function WriterPage() {
     );
     setProject(next);
     setEditingBody(false);
+    setCitePickerOpen(false);
   }
 
   async function handleExportBilingual() {
@@ -1258,19 +1323,75 @@ export default function WriterPage() {
                   ) : editingBody ? (
                     <>
                       <textarea
+                        ref={bodyTextareaRef}
                         className="input mono"
                         rows={18}
                         value={bodyDraft}
                         onChange={(e) => setBodyDraft(e.target.value)}
+                        onSelect={rememberBodySel}
+                        onKeyUp={(e) => {
+                          if (!e.nativeEvent.isComposing) rememberBodySel();
+                        }}
+                        onClick={rememberBodySel}
                       />
-                      <div className="flex" style={{ marginTop: 8, gap: 8 }}>
+                      <div className="flex" style={{ marginTop: 8, gap: 8, alignItems: "flex-start" }}>
                         <button className="btn primary" type="button" onClick={handleSaveBody}>
                           保存（旧版を退避）
                         </button>
-                        <button className="btn" type="button" onClick={() => setEditingBody(false)}>
+                        <button
+                          className="btn"
+                          type="button"
+                          onClick={() => {
+                            setEditingBody(false);
+                            setCitePickerOpen(false);
+                          }}
+                        >
                           キャンセル
                         </button>
+                        {project.genre === "paper" && (project.references?.length ?? 0) > 0 ? (
+                          <div className="nav-dropdown" ref={citePickerRef} style={{ marginLeft: "auto" }}>
+                            <button
+                              className="btn"
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => setCitePickerOpen((o) => !o)}
+                            >
+                              引用を挿入 ▾
+                            </button>
+                            {citePickerOpen ? (
+                              <div
+                                className="nav-dropdown-menu"
+                                role="menu"
+                                style={{ left: "auto", right: 0, maxHeight: 260, overflowY: "auto" }}
+                              >
+                                {[...project.references]
+                                  .sort((a, b) => {
+                                    const linked = selected.section.referenceIds ?? [];
+                                    return (linked.includes(b.id) ? 1 : 0) - (linked.includes(a.id) ? 1 : 0);
+                                  })
+                                  .map((r) => (
+                                    <button
+                                      key={r.id}
+                                      type="button"
+                                      role="menuitem"
+                                      className="nav-dropdown-item"
+                                      style={{ textAlign: "left" }}
+                                      onMouseDown={(e) => e.preventDefault()}
+                                      onClick={() => insertCitation(r.id)}
+                                      title={[r.author, r.year, r.source].filter(Boolean).join(" ")}
+                                    >
+                                      {(selected.section.referenceIds ?? []).includes(r.id) ? "★ " : ""}
+                                      {authorYearMarker(r)}{r.title ? ` ${r.title}` : ""}
+                                    </button>
+                                  ))}
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}
                       </div>
+                      <p className="help" style={{ marginTop: 6 }}>
+                        カーソル位置に引用マーカー〔著者, 年〕を挿入します（★は この節に紐付けた文献）。体裁はWord出力時に選択スタイルへ変換されます。
+                      </p>
                     </>
                   ) : (
                     <>

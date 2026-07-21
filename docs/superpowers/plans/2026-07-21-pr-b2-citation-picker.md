@@ -79,9 +79,11 @@ import { authorYearMarker } from "@/lib/citation";
   }
 ```
 
-- [ ] **Step 3: 挿入ハンドラと2つのフックを追加（すべて同じアンカーの直前へ）**
+- [ ] **Step 3: 挿入ハンドラ（関数2つ）とフック2つを追加**
 
-**アンカーを1つに統一**する。`function handleSaveBody() {` を検索し、その**直前**に、以下（ハンドラ2つ＋フック2つ）をまとめて追加する:
+⚠️ **フックは早期 return より前に置くこと**。`handleSaveBody` は `if (!project) return` / `if (!project.selectedOutline) return` などの早期 return の**後**に定義される。フックをそこに置くと `project` が null の初回描画で return が先に走り、`useLayoutEffect` が条件付き呼び出しになって Rules of Hooks 違反でクラッシュする（実機検証で確認済み）。関数宣言（`rememberBodySel`/`insertCitation`）は巻き上げされるので早期 return の後でもよい。
+
+(3a) 関数2つは `function handleSaveBody() {` を検索し、その**直前**に追加する:
 ```tsx
   // 本文編集: キャレット位置を保持（ピッカーのボタン押下でフォーカスが外れる前の位置を使う）
   function rememberBodySel() {
@@ -103,9 +105,13 @@ import { authorYearMarker } from "@/lib/citation";
     setBodySel({ start: caret, end: caret });
     setCitePickerOpen(false);
   }
+```
 
+(3b) フック2つは早期 return より前に置く。`currentAgentReports` の `useMemo`（末尾 `}, [selected, project]);`）を検索し、その直後・`if (!project) {` の直前に追加する:
+```tsx
   // 挿入で bodyDraft を差し替えた後、DOM 反映直後にキャレットをマーカー直後へ戻す
   // （rAF だと setBodyDraft の再レンダー前に走り得るため useLayoutEffect + [bodyDraft] で確実にする）
+  // NB: フックは早期 return より前に置くこと（Rules of Hooks）
   useLayoutEffect(() => {
     const caret = pendingCaretRef.current;
     if (caret == null) return;
