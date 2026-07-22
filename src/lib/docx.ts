@@ -2,6 +2,7 @@
 
 import {
   Document,
+  FootnoteReferenceRun,
   HeadingLevel,
   Packer,
   Paragraph,
@@ -13,11 +14,14 @@ import {
   WidthType,
 } from "docx";
 import { saveAs } from "file-saver";
-import type { Project, SectionDraft } from "./types";
+import type { Project, Reference, SectionDraft } from "./types";
 import {
   applyInTextCitations,
+  authorYearMarker,
   buildBibliography,
   DEFAULT_CITATION_STYLE,
+  formatNoteEntry,
+  isFootnoteStyle,
 } from "./citation";
 import { getGenreConfig } from "./genreConfig";
 
@@ -55,6 +59,75 @@ function listBlock(title: string, items: string[]): Paragraph[] {
  * インラインMarkdown（**太字** / *斜体* / `コード`）を TextRun[] に変換する。
  * AI本文にはMarkdown記法が混ざるため、Word出力では記号を出さず書式にする。
  */
+/**
+ * 脚注コレクタ。1回の Word 出力を通して脚注 id を連番採番し、entries を貯める。
+ * entries は Document({ footnotes }) にそのまま渡せる形（{ [id]: { children: Paragraph[] } }）。
+ */
+type FootnoteCtx = {
+  refs: Reference[];
+  nextId: number;
+  entries: Record<number, { children: Paragraph[] }>;
+  alloc(ref: Reference): number;
+};
+
+function createFootnoteCtx(refs: Reference[]): FootnoteCtx {
+  const ctx: FootnoteCtx = {
+    refs,
+    nextId: 1,
+    entries: {},
+    alloc(ref: Reference) {
+      const id = ctx.nextId++;
+      ctx.entries[id] = {
+        children: [new Paragraph({ children: [new TextRun(formatNoteEntry(ref))] })],
+      };
+      return id;
+    },
+  };
+  return ctx;
+}
+
+/**
+ * 行内テキストを、引用マーカー〔著者, 年〕の位置で分割して Word runs にする。
+ * マーカー一致箇所は FootnoteReferenceRun（本文には上付き番号だけ残る）、
+ * 非マーカー区間は既存 renderInline に委譲する（毎回フル注＝出現ごとに新 id）。
+ */
+function renderInlineWithFootnotes(
+  text: string,
+  ctx: FootnoteCtx,
+): (TextRun | FootnoteReferenceRun)[] {
+  // 長いマーカー優先（部分被り回避）。空マーカーは除外。
+  const markers = ctx.refs
+    .map((ref) => ({ ref, marker: authorYearMarker(ref) }))
+    .filter((m) => m.marker.length > 0)
+    .sort((a, b) => b.marker.length - a.marker.length);
+  const out: (TextRun | FootnoteReferenceRun)[] = [];
+  let i = 0;
+  while (i < text.length) {
+    let hit: { ref: Reference; marker: string } | null = null;
+    for (const m of markers) {
+      if (text.startsWith(m.marker, i)) {
+        hit = m;
+        break;
+      }
+    }
+    if (hit) {
+      out.push(new FootnoteReferenceRun(ctx.alloc(hit.ref)));
+      i += hit.marker.length;
+      continue;
+    }
+    // 次のマーカー開始位置まで素のテキスト。無ければ残り全部。
+    let next = text.length;
+    for (const m of markers) {
+      const idx = text.indexOf(m.marker, i);
+      if (idx !== -1 && idx < next) next = idx;
+    }
+    const seg = text.slice(i, next);
+    if (seg) out.push(...renderInline(seg));
+    i = next;
+  }
+  return out;
+}
+
 function renderInline(text: string): TextRun[] {
   const runs: TextRun[] = [];
   const re = /(\*\*([^*]+)\*\*|`([^`]+)`|\*([^*\s][^*]*?)\*|__([^_]+)__)/g;
@@ -155,11 +228,18 @@ function buildTable(rows: string[][]): Table {
  * 本文（Markdownが混ざり得る）を Word 要素に変換する。
  * 見出し(#)・箇条書き(-)・**太字**・表(|…|) を書式化し、記号を残さない。
  */
-function bodyParagraphs(body: string, transform?: (t: string) => string): (Paragraph | Table)[] {
+function bodyParagraphs(
+  body: string,
+  transform?: (t: string) => string,
+  footnoteCtx?: FootnoteCtx,
+): (Paragraph | Table)[] {
   if (!body) return [para("（本文未生成）")];
   const out: (Paragraph | Table)[] = [];
-  // 論文モード: 引用マーカーのスタイル変換（〔著者, 年〕→[n] 等）を Markdown 解析より前に適用
-  const src = transform ? transform(body) : body;
+  // 脚注モードは文字列変換を通さず（本文にマーカーを残す代わりに脚注参照へ退避）、
+  // 行内を renderInlineWithFootnotes で処理する。非脚注時は従来どおり transform を当てる。
+  const src = footnoteCtx ? body : transform ? transform(body) : body;
+  const inline = (t: string): (TextRun | FootnoteReferenceRun)[] =>
+    footnoteCtx ? renderInlineWithFootnotes(t, footnoteCtx) : renderInline(t);
   const lines = src.replace(/\r\n?/g, "\n").split("\n");
   for (let idx = 0; idx < lines.length; idx++) {
     const raw = lines[idx];
@@ -186,7 +266,7 @@ function bodyParagraphs(body: string, transform?: (t: string) => string): (Parag
       const level = h[1].length;
       out.push(
         new Paragraph({
-          children: renderInline(h[2].trim()),
+          children: inline(h[2].trim()),
           heading: level <= 2 ? HeadingLevel.HEADING_3 : HeadingLevel.HEADING_4,
         }),
       );
@@ -195,16 +275,16 @@ function bodyParagraphs(body: string, transform?: (t: string) => string): (Parag
     // 箇条書き: - / * / + → ・ 付き段落
     const b = line.match(/^\s*[-*+]\s+(.*)$/);
     if (b) {
-      out.push(new Paragraph({ children: [new TextRun("・"), ...renderInline(b[1])] }));
+      out.push(new Paragraph({ children: [new TextRun("・"), ...inline(b[1])] }));
       continue;
     }
     // 引用: > text → 記号を外す
     const q = line.match(/^\s*>\s?(.*)$/);
     if (q) {
-      out.push(new Paragraph({ children: renderInline(q[1]) }));
+      out.push(new Paragraph({ children: inline(q[1]) }));
       continue;
     }
-    out.push(new Paragraph({ children: renderInline(line) }));
+    out.push(new Paragraph({ children: inline(line) }));
   }
   return out.length ? out : [para("")];
 }
@@ -217,12 +297,17 @@ function sectionParagraphs(
   draft: SectionDraft,
   includeNotes = false,
   transformBody?: (t: string) => string,
+  footnoteCtx?: FootnoteCtx,
 ): (Paragraph | Table)[] {
   const blocks: (Paragraph | Table)[] = [];
   blocks.push(heading(draft.sectionTitle, HeadingLevel.HEADING_2));
   // 本文冒頭にAIが付けた重複見出し（番号付き）を除去してから流す
   blocks.push(
-    ...bodyParagraphs(stripLeadingDuplicateHeading(draft.body, draft.sectionTitle), transformBody),
+    ...bodyParagraphs(
+      stripLeadingDuplicateHeading(draft.body, draft.sectionTitle),
+      transformBody,
+      footnoteCtx,
+    ),
   );
   blocks.push(spacer());
   if (includeNotes) {
@@ -254,16 +339,23 @@ export async function exportSectionDocx(
     front.push(para(`${subjectLabel}：${project.intervieweeName}`));
   }
   front.push(spacer());
+  // 単一節でも脚注スタイルなら脚注を織り込む（断片扱いなので末尾の参考文献リストは付けない）。
+  const isPaper = project.genre === "paper";
+  const paperRefs = isPaper ? project.references ?? [] : [];
+  const citationStyle = project.paperMeta?.citationStyle ?? DEFAULT_CITATION_STYLE;
+  const footnoteMode = isPaper && paperRefs.length > 0 && isFootnoteStyle(citationStyle);
+  const footnoteCtx = footnoteMode ? createFootnoteCtx(paperRefs) : undefined;
   const doc = new Document({
     creator: "アキカゼ出版AI",
     title: `${draft.chapterTitle} / ${draft.sectionTitle}`,
+    ...(footnoteCtx ? { footnotes: footnoteCtx.entries } : {}),
     sections: [
       {
         properties: {},
         children: [
           ...front,
           heading(draft.chapterTitle, HeadingLevel.HEADING_1),
-          ...sectionParagraphs(draft, includeNotes),
+          ...sectionParagraphs(draft, includeNotes, undefined, footnoteCtx),
         ],
       },
     ],
@@ -299,8 +391,10 @@ export async function exportProjectDocx(project: Project, includeNotes = false):
   const allBodyText = isPaper
     ? project.generatedSections.map((d) => d.body).filter(Boolean).join("\n")
     : "";
+  const footnoteMode = isPaper && paperRefs.length > 0 && isFootnoteStyle(citationStyle);
+  const footnoteCtx = footnoteMode ? createFootnoteCtx(paperRefs) : undefined;
   const transformBody =
-    isPaper && paperRefs.length > 0
+    isPaper && paperRefs.length > 0 && !footnoteMode
       ? (t: string) => applyInTextCitations(t, paperRefs, citationStyle, allBodyText)
       : undefined;
 
@@ -324,7 +418,7 @@ export async function exportProjectDocx(project: Project, includeNotes = false):
           (d) => d.chapterId === chapter.id && d.sectionId === section.id,
         );
         if (draft) {
-          children.push(...sectionParagraphs(draft, includeNotes, transformBody));
+          children.push(...sectionParagraphs(draft, includeNotes, transformBody, footnoteCtx));
         } else {
           children.push(heading(section.title, HeadingLevel.HEADING_2));
           children.push(para("（本文未生成）"));
@@ -347,6 +441,7 @@ export async function exportProjectDocx(project: Project, includeNotes = false):
   const doc = new Document({
     creator: "アキカゼ出版AI",
     title: project.name,
+    ...(footnoteCtx ? { footnotes: footnoteCtx.entries } : {}),
     sections: [{ properties: {}, children }],
   });
   await downloadDoc(doc, `アキカゼ出版AI_全体原稿ドラフト_${fileSafe(project.name)}.docx`);
@@ -455,11 +550,13 @@ export async function exportPreprintDocx(project: Project): Promise<void> {
   // 番号式の採番は予稿本文そのものを出現順の基準にする。
   const paperRefs = project.references ?? [];
   const citationStyle = project.paperMeta?.citationStyle ?? DEFAULT_CITATION_STYLE;
+  const footnoteMode = paperRefs.length > 0 && isFootnoteStyle(citationStyle);
+  const footnoteCtx = footnoteMode ? createFootnoteCtx(paperRefs) : undefined;
   const transformBody =
-    paperRefs.length > 0
+    paperRefs.length > 0 && !footnoteMode
       ? (t: string) => applyInTextCitations(t, paperRefs, citationStyle, preprint)
       : undefined;
-  children.push(...bodyParagraphs(preprint, transformBody));
+  children.push(...bodyParagraphs(preprint, transformBody, footnoteCtx));
 
   if (paperRefs.length > 0) {
     children.push(spacer());
@@ -472,6 +569,7 @@ export async function exportPreprintDocx(project: Project): Promise<void> {
   const doc = new Document({
     creator: "アキカゼ出版AI",
     title: `${project.name}（予稿）`,
+    ...(footnoteCtx ? { footnotes: footnoteCtx.entries } : {}),
     sections: [{ properties: {}, children }],
   });
   await downloadDoc(doc, `予稿_${fileSafe(project.name)}.docx`);
