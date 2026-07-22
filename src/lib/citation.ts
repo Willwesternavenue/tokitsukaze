@@ -13,7 +13,7 @@
 
 import type { Reference } from "./types";
 
-export type CitationStyle = "apa" | "ieee" | "sist02" | "mla";
+export type CitationStyle = "apa" | "ieee" | "sist02" | "mla" | "jp-footnote";
 
 export const DEFAULT_CITATION_STYLE: CitationStyle = "apa";
 
@@ -42,6 +42,11 @@ export const CITATION_STYLE_OPTIONS: {
     label: "MLA（著者）",
     help: "本文: 〔著者〕／一覧: 著者名順（Works Cited）。文学・言語・人文系",
   },
+  {
+    value: "jp-footnote",
+    label: "和文脚注",
+    help: "本文: 上付き番号／ページ下部に脚注＋末尾に参考文献リスト（Word出力時）。人文・和文誌",
+  },
 ];
 
 export function citationStyleLabel(style: CitationStyle | undefined): string {
@@ -52,6 +57,11 @@ export function citationStyleLabel(style: CitationStyle | undefined): string {
 /** 番号式（本文マーカーが [n]）かどうか */
 export function isNumericStyle(style: CitationStyle): boolean {
   return style === "ieee";
+}
+
+/** 脚注式（本文＝上付き番号／ページ下部＝脚注）かどうか */
+export function isFootnoteStyle(style: CitationStyle): boolean {
+  return style === "jp-footnote";
 }
 
 /** 著者の姓（あるいは最初の著者名）を短く。マーカー用 */
@@ -73,6 +83,23 @@ export function authorYearMarker(ref: Reference): string {
   const author = shortAuthor(ref);
   const year = (ref.year ?? "").trim();
   return year ? `〔${author}, ${year}〕` : `〔${author}〕`;
+}
+
+/**
+ * 和文脚注1件の本文テキスト。毎回フル形式なので状態を持たず ref だけで一意に決まる純粋関数。
+ * 例: 著者『表題』誌名, 年. URL （欠損フィールドは飛ばす。行頭番号は docx の footnote 機能が振る）
+ */
+export function formatNoteEntry(ref: Reference): string {
+  const author = (ref.author ?? "").trim();
+  const title = ref.title.trim();
+  const source = (ref.source ?? "").trim();
+  const year = (ref.year ?? "").trim();
+  const url = (ref.url ?? "").trim();
+  const head = [author, title ? `『${title}』` : ""].filter(Boolean).join("");
+  const tail = [source, year].filter(Boolean).join(", ");
+  const core = [head, tail].filter(Boolean).join(" ").trim();
+  const withDot = core ? `${core.replace(/[。.\s]*$/, "")}.` : `${title}.`;
+  return url ? `${withDot} ${url}` : withDot;
 }
 
 /** MLA 本文マーカー（年を落とす）。〔著者〕 */
@@ -184,7 +211,7 @@ export function applyInTextCitations(
   bodyTextForNumbering = body,
 ): string {
   if (!body) return body;
-  if (style === "apa" || style === "sist02") return body;
+  if (style === "apa" || style === "sist02" || isFootnoteStyle(style)) return body;
 
   if (style === "mla") {
     let out = body;
