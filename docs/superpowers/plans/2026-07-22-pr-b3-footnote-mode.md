@@ -46,10 +46,13 @@ function formatNoteEntry(ref) {
   const source = (ref.source ?? "").trim();
   const year = (ref.year ?? "").trim();
   const url = (ref.url ?? "").trim();
-  const head = [author, title ? `『${title}』` : ""].filter(Boolean).join("");
-  const tail = [source, year].filter(Boolean).join(", ");
-  const core = [head, tail].filter(Boolean).join(" ").trim();
-  const withDot = core ? `${core.replace(/[。.\s]*$/, "")}.` : `${title}.`;
+  // 和文脚注: 著者『表題』誌名 を詰めて連結し、年は読点で継ぐ。欠損フィールドは飛ばす。
+  let s = author;
+  if (title) s += `『${title}』`;
+  if (source) s += source;
+  if (year) s += `${s ? ", " : ""}${year}`;
+  s = s.trim().replace(/[。.\s]*$/, "");
+  const withDot = s ? `${s}.` : ".";
   return url ? `${withDot} ${url}` : withDot;
 }
 console.log(formatNoteEntry({ author: "田中花子", title: "教育とAI", source: "日本教育工学会論文誌", year: "2021", url: "https://example.jp/a" }));
@@ -64,9 +67,9 @@ Expected:
 ```
 田中花子『教育とAI』日本教育工学会論文誌, 2021. https://example.jp/a
 Vaswani『Attention Is All You Need』NeurIPS, 2017.
-無著者資料.
+『無著者資料』.
 ```
-末尾がピリオド1個で、欠損フィールドが飛ばされていること。
+`』`と誌名の間に余分な空白が無く、末尾がピリオド1個で、欠損フィールドが飛ばされていること（表題は常に『』で括る）。
 
 - [ ] **Step 3: `CitationStyle` に値を追加**
 
@@ -178,10 +181,13 @@ export function formatNoteEntry(ref: Reference): string {
   const source = (ref.source ?? "").trim();
   const year = (ref.year ?? "").trim();
   const url = (ref.url ?? "").trim();
-  const head = [author, title ? `『${title}』` : ""].filter(Boolean).join("");
-  const tail = [source, year].filter(Boolean).join(", ");
-  const core = [head, tail].filter(Boolean).join(" ").trim();
-  const withDot = core ? `${core.replace(/[。.\s]*$/, "")}.` : `${title}.`;
+  // 和文脚注: 著者『表題』誌名 を詰めて連結し、年は読点で継ぐ。欠損フィールドは飛ばす。
+  let s = author;
+  if (title) s += `『${title}』`;
+  if (source) s += source;
+  if (year) s += `${s ? ", " : ""}${year}`;
+  s = s.trim().replace(/[。.\s]*$/, "");
+  const withDot = s ? `${s}.` : ".";
   return url ? `${withDot} ${url}` : withDot;
 }
 ```
