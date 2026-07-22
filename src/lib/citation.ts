@@ -95,10 +95,13 @@ export function formatNoteEntry(ref: Reference): string {
   const source = (ref.source ?? "").trim();
   const year = (ref.year ?? "").trim();
   const url = (ref.url ?? "").trim();
-  const head = [author, title ? `『${title}』` : ""].filter(Boolean).join("");
-  const tail = [source, year].filter(Boolean).join(", ");
-  const core = [head, tail].filter(Boolean).join(" ").trim();
-  const withDot = core ? `${core.replace(/[。.\s]*$/, "")}.` : `${title}.`;
+  // 和文脚注: 著者『表題』誌名 を詰めて連結し、年は読点で継ぐ。欠損フィールドは飛ばす。
+  let s = author;
+  if (title) s += `『${title}』`;
+  if (source) s += source;
+  if (year) s += `${s ? ", " : ""}${year}`;
+  s = s.trim().replace(/[。.\s]*$/, "");
+  const withDot = s ? `${s}.` : ".";
   return url ? `${withDot} ${url}` : withDot;
 }
 
