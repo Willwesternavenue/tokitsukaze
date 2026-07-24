@@ -234,7 +234,8 @@ export default function GuidePage(): JSX.Element {
           </div>
           <div className="panel-body dense">
             <p style={{ marginTop: 0 }}>
-              登録した文献だけを本文で引用し、Word出力時に投稿先の体裁へ自動整形します。次の順番で使います。
+              登録した文献を本文に引用し、Word出力時に投稿先の体裁へ整形します（ページ下部の和文脚注も選べます）。
+              本文へ引用を入れる方法は<strong>4通り</strong>あり、作り込んだ文章を残したまま引用だけ足すこともできます。
             </p>
             <ol style={{ margin: "0 0 10px", paddingLeft: 20, fontSize: 13, lineHeight: 1.9 }}>
               <li>
@@ -244,22 +245,63 @@ export default function GuidePage(): JSX.Element {
               </li>
               <li>
                 <strong>引用スタイルを選ぶ</strong> ― <Link href="/">01 素材</Link> の「論文仕様 → 引用・参考文献の体裁」で
-                APA／IEEE／SIST 02・和文誌／MLA から投稿先に合うものを選びます。
+                APA／IEEE／SIST 02・和文誌／MLA／<strong>和文脚注</strong>から投稿先に合うものを選びます。
+                <span className="muted">（和文脚注は本文が上付き番号、ページ下部に脚注＋末尾に文献リスト）</span>
               </li>
               <li>
-                <strong>本文を書く</strong> ― <Link href="/writer">執筆</Link> で本文を生成すると、AIは登録文献にだけ
-                引用マーカー〔著者, 年〕を付けます。登録が無い箇所は架空文献を作らず〔要出典〕と書きます。
+                <strong>本文に引用を入れる</strong> ― <Link href="/writer">執筆</Link> で次のいずれかを使います。
+                <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+                  <li>
+                    <strong>生成で自動</strong>：本文を生成すると、AIは登録文献にだけ〔著者, 年〕を付けます
+                    （登録が無い箇所は架空文献を作らず〔要出典〕）。
+                  </li>
+                  <li>
+                    <strong>節に紐付けて優先</strong>：「小見出しを編集 → この節で使う文献」をチェックすると、
+                    その節の生成で優先的に引用されます。
+                  </li>
+                  <li>
+                    <strong>手で挿す</strong>：「本文を編集 → 引用を挿入」でカーソル位置にマーカーを挿入します（文章はそのまま）。
+                  </li>
+                  <li>
+                    <strong>既存本文へAIで差し込む</strong>：「AIで引用を差し込む」で、本文を書き換えずに適切な箇所への
+                    引用候補をAIが提案します。1件ずつ採用でき、採用した分だけマーカーが入ります。
+                  </li>
+                </ul>
               </li>
               <li>
-                <strong>Wordで出力する</strong> ― 「全体Wordを出力」すると、本文マーカーが選んだ体裁へ変換され
-                （IEEEなら出現順に <code>[1][2]</code>、MLAなら年を省略）、末尾に<strong>参考文献リスト</strong>が付きます。
+                <strong>Wordで出力する</strong> ― 「全体Wordを出力」すると本文マーカーが選んだ体裁へ変換され
+                （IEEEなら出現順に <code>[1][2]</code>、MLAなら年を省略、和文脚注ならページ下部の脚注）、
+                末尾に<strong>参考文献リスト</strong>が付きます。
               </li>
             </ol>
+            <details className="guide-faq">
+              <summary>作った本文を変えずに引用だけ足したい</summary>
+              <div className="guide-faq-body">
+                本文を再生成すると文章ごと作り直されます。文章を残したいときは「本文を編集 → 引用を挿入」で手挿しするか、
+                「AIで引用を差し込む」でAIの提案を1件ずつ採用してください。どちらも<strong>地の文は変わらず</strong>、
+                〔著者, 年〕マーカーだけが入ります。本文と一致しない・複数該当・すでに引用がある箇所は「要手動」に回るので、その場合は手挿しを使います。
+              </div>
+            </details>
+            <details className="guide-faq">
+              <summary>特定の節でこの文献を必ず使わせたい</summary>
+              <div className="guide-faq-body">
+                <Link href="/writer">執筆</Link> で節を選び「小見出しを編集 → この節で使う文献」でチェックすると、
+                その節の本文生成で優先的に引用されます（紐付けはその節だけに効きます）。
+              </div>
+            </details>
+            <details className="guide-faq">
+              <summary>ページ下部の脚注（和文脚注）にしたい</summary>
+              <div className="guide-faq-body">
+                <Link href="/">01 素材</Link> の引用スタイルで「和文脚注」を選ぶと、Word出力時に本文が上付き番号になり、
+                ページ下部に脚注が入ります（末尾の参考文献リストも付きます）。人文・和文誌向けの体裁です。
+              </div>
+            </details>
             <details className="guide-faq">
               <summary>引用マーカーが〔要出典〕のままになる</summary>
               <div className="guide-faq-body">
                 その主張に対応する文献が未登録です。<Link href="/references">参考文献</Link> に登録すれば、
-                本文を作り直したときに〔著者, 年〕へ置き換わります。文献の実在確認まではAIは行いません（登録内容がそのまま使われます）。
+                本文を作り直したときに〔著者, 年〕へ置き換わります（既存本文なら「AIで引用を差し込む」でも入ります）。
+                文献の実在確認まではAIは行いません（登録内容がそのまま使われます）。
               </div>
             </details>
             <details className="guide-faq">
