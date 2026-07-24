@@ -11,6 +11,7 @@ import {
   loadPrompts,
   removeSectionFromOutline,
   replaceSelectedOutline,
+  applyCitationAnnotationsSave,
   saveManualBodyEdit,
   saveSectionAgentReports,
   setPendingRun,
@@ -34,7 +35,10 @@ import type { SectionsWorkflowResult } from "@/workflows/sections";
 import { buildScreenplayExtraContext, getGenreConfig } from "@/lib/genreConfig";
 import { diffLines, diffStats } from "@/lib/diff";
 import { authorYearMarker } from "@/lib/citation";
+import { planAnnotations, applyAnnotations } from "@/lib/citationAnnotate";
+import type { AnnotationPlan, AnnotationItem } from "@/lib/citationAnnotate";
 import {
+  annotateSectionCitations,
   finishSectionDraft,
   generateSectionDraft,
   listUntranslated,
@@ -88,6 +92,9 @@ export default function WriterPage() {
   const citePickerRef = useRef<HTMLDivElement>(null);
   const pendingCaretRef = useRef<number | null>(null);
   const [citePickerOpen, setCitePickerOpen] = useState(false);
+  const [annotating, setAnnotating] = useState(false);
+  const [annotatePlan, setAnnotatePlan] = useState<AnnotationPlan | null>(null);
+  const [annotateChecked, setAnnotateChecked] = useState<Set<AnnotationItem>>(new Set());
   // 本文編集の最後のキャレット位置（ピッカーのボタンでフォーカスが外れても保持する）
   const [bodySel, setBodySel] = useState<{ start: number; end: number }>({ start: 0, end: 0 });
   const [showBodyDiff, setShowBodyDiff] = useState(false);
@@ -710,6 +717,53 @@ export default function WriterPage() {
     setCitePickerOpen(false);
   }
 
+  // 論文モード: 既存本文にAIで引用マーカーを差し込む候補を出す（本文は変えずレビューに載せる）
+  async function handleAnnotateCitations() {
+    if (!project || !selected || !currentDraft) return;
+    setAnnotating(true);
+    setError(null);
+    try {
+      const refs = project.references ?? [];
+      const proposals = await annotateSectionCitations(
+        currentDraft.body,
+        refs,
+        project.paperMeta?.field ?? "",
+        project.paperMeta?.researchQuestion ?? "",
+      );
+      const plan = planAnnotations(currentDraft.body, proposals, refs);
+      setAnnotatePlan(plan);
+      setAnnotateChecked(new Set(plan.applied)); // 既定は全採用
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAnnotating(false);
+    }
+  }
+
+  function toggleAnnotateItem(item: AnnotationItem, checked: boolean) {
+    setAnnotateChecked((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(item);
+      else next.delete(item);
+      return next;
+    });
+  }
+
+  // 採用した候補だけを元本文に挿入して保存（地の文は不変・旧版退避＋自動ロック）
+  function handleApplyAnnotations() {
+    if (!project || !selected || !currentDraft || !annotatePlan) return;
+    const chosen = annotatePlan.applied.filter((it) => annotateChecked.has(it));
+    if (chosen.length === 0) {
+      setAnnotatePlan(null);
+      return;
+    }
+    const newBody = applyAnnotations(currentDraft.body, chosen);
+    const next = applyCitationAnnotationsSave(selected.chapter.id, selected.section.id, newBody);
+    setProject(next);
+    setAnnotatePlan(null);
+    setAnnotateChecked(new Set());
+  }
+
   function handleSaveBody() {
     if (!selected || !currentDraft) return;
     // isManualEdit=!isTranslation。翻訳は自動ロックも履歴圧縮もしない＝従来どおり毎回1版積む
@@ -1055,6 +1109,21 @@ export default function WriterPage() {
                         {isTranslation ? "訳文を編集" : "本文を編集"}
                       </button>
                     ) : null}
+                    {project.genre === "paper" &&
+                    currentDraft &&
+                    !editingBody &&
+                    (project.references?.length ?? 0) > 0 ? (
+                      <button
+                        className="btn"
+                        type="button"
+                        onClick={handleAnnotateCitations}
+                        disabled={annotating}
+                        title="登録文献をもとに、本文を書き換えずに引用マーカーを差し込む候補を出します"
+                      >
+                        {annotating ? <span className="spinner" /> : null}
+                        AIで引用を差し込む
+                      </button>
+                    ) : null}
                     <button
                       className="btn"
                       onClick={handleReview}
@@ -1074,6 +1143,79 @@ export default function WriterPage() {
                     </button>
                   </div>
                 </div>
+                {annotatePlan ? (
+                  <div
+                    className="panel-body"
+                    style={{ borderBottom: "1px solid var(--border)", background: "var(--panel-alt)" }}
+                  >
+                    <div className="field-label">
+                      引用の差し込み候補（チェックした分だけ本文に入ります・地の文は変わりません）
+                    </div>
+                    {annotatePlan.applied.length === 0 ? (
+                      <p className="help">差し込み可能な候補はありませんでした。</p>
+                    ) : (
+                      <ul className="list-block" style={{ border: "1px solid var(--border)", borderRadius: 3 }}>
+                        {annotatePlan.applied.map((item, i) => (
+                          <li key={i}>
+                            <label className="staff-toggle" style={{ gap: 8, alignItems: "flex-start" }}>
+                              <input
+                                type="checkbox"
+                                checked={annotateChecked.has(item)}
+                                onChange={(e) => toggleAnnotateItem(item, e.target.checked)}
+                              />
+                              <span style={{ fontSize: 12 }}>
+                                <strong>{item.marker}</strong>
+                                <span className="muted">
+                                  {" ― "}
+                                  {item.proposal.quote}
+                                </span>
+                                {item.proposal.reason ? (
+                                  <span className="muted" style={{ display: "block" }}>
+                                    根拠: {item.proposal.reason}
+                                  </span>
+                                ) : null}
+                              </span>
+                            </label>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {annotatePlan.needsManual.length > 0 ? (
+                      <details style={{ marginTop: 8 }}>
+                        <summary>要手動（{annotatePlan.needsManual.length}件・本文と一致せず／曖昧／既に引用あり）</summary>
+                        <ul className="list-block">
+                          {annotatePlan.needsManual.map((s, i) => (
+                            <li key={i} style={{ fontSize: 12 }}>
+                              {s.ref ? authorYearMarker(s.ref) : s.proposal.refId}
+                              <span className="muted">
+                                {" ["}
+                                {s.why}
+                                {"] "}
+                                {s.proposal.quote}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                        <p className="help">
+                          これらは「本文を編集 → 引用を挿入」で手挿ししてください（該当文にカーソルを置いて選択）。
+                        </p>
+                      </details>
+                    ) : null}
+                    <div className="flex" style={{ marginTop: 10, gap: 8 }}>
+                      <button
+                        className="btn primary"
+                        type="button"
+                        onClick={handleApplyAnnotations}
+                        disabled={annotateChecked.size === 0}
+                      >
+                        選択を本文に反映（{annotateChecked.size}件）
+                      </button>
+                      <button className="btn" type="button" onClick={() => setAnnotatePlan(null)}>
+                        キャンセル
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
                 {editingHeading ? (
                   <div className="panel-body" style={{ borderBottom: "1px solid var(--border)", background: "var(--panel-alt)" }}>
                     <div className="field" style={{ marginBottom: 8 }}>
