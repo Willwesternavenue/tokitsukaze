@@ -679,6 +679,39 @@ export function replaceDraftBody(
 }
 
 /**
+ * AI引用差し込みの反映を保存する（論文モード）。
+ * - 旧本文を必ず1版 bodyHistory に退避（圧縮しない＝「変更差分」から retrofit 前へ復元できる）。
+ * - PR-A と同じ自動保護: bodyEditedAt を更新し、未ロックなら locked=true/lockReason="manual"。
+ */
+export function applyCitationAnnotationsSave(
+  chapterId: string,
+  sectionId: string,
+  newBody: string,
+): Project {
+  const nowIso = new Date().toISOString();
+  return updateProject((p) => ({
+    ...p,
+    generatedSections: p.generatedSections.map((d) => {
+      if (d.chapterId !== chapterId || d.sectionId !== sectionId) return d;
+      if (d.body === newBody) return d;
+      const bodyHistory = [
+        ...(d.bodyHistory ?? []),
+        { savedAt: d.updatedAt, body: d.body, note: "AI引用差し込み前" },
+      ].slice(-10);
+      const autoLockNow = !d.bodyEditedAt && !d.locked;
+      return {
+        ...d,
+        body: newBody,
+        bodyHistory,
+        bodyEditedAt: nowIso,
+        ...(autoLockNow ? { locked: true, lockReason: "manual" as const } : {}),
+        updatedAt: nowIso,
+      };
+    }),
+  }));
+}
+
+/**
  * 本文の手動編集を保存する（全ジャンル共通）。
  * 第4引数 isManualEdit は「非翻訳の手動編集か」＝自動保護と履歴圧縮の**両方**を制御する。
  * - 旧本文を bodyHistory に退避（最大10版）。isManualEdit のときだけ、前回の手動保存(bodyEditedAt)から
