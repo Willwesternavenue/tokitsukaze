@@ -95,6 +95,7 @@ export default function WriterPage() {
   const [annotating, setAnnotating] = useState(false);
   const [annotatePlan, setAnnotatePlan] = useState<AnnotationPlan | null>(null);
   const [annotateChecked, setAnnotateChecked] = useState<Set<AnnotationItem>>(new Set());
+  const [annotateSourceBody, setAnnotateSourceBody] = useState<string | null>(null);
   // 本文編集の最後のキャレット位置（ピッカーのボタンでフォーカスが外れても保持する）
   const [bodySel, setBodySel] = useState<{ start: number; end: number }>({ start: 0, end: 0 });
   const [showBodyDiff, setShowBodyDiff] = useState(false);
@@ -693,6 +694,9 @@ export default function WriterPage() {
     setEditingBody(false);
     setShowBodyDiff(false);
     setCitePickerOpen(false);
+    setAnnotatePlan(null);
+    setAnnotateChecked(new Set());
+    setAnnotateSourceBody(null);
     setSelected({ chapter, section });
   }
 
@@ -733,6 +737,7 @@ export default function WriterPage() {
       const plan = planAnnotations(currentDraft.body, proposals, refs);
       setAnnotatePlan(plan);
       setAnnotateChecked(new Set(plan.applied)); // 既定は全採用
+      setAnnotateSourceBody(currentDraft.body);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -752,9 +757,18 @@ export default function WriterPage() {
   // 採用した候補だけを元本文に挿入して保存（地の文は不変・旧版退避＋自動ロック）
   function handleApplyAnnotations() {
     if (!project || !selected || !currentDraft || !annotatePlan) return;
+    // 候補算出時の本文から変わっていたら、オフセットがずれるので反映せず中止（別節へ切替・再生成・ポーリング対策）。
+    if (currentDraft.body !== annotateSourceBody) {
+      setError("本文が変わったため引用の反映を中止しました。もう一度「AIで引用を差し込む」を実行してください。");
+      setAnnotatePlan(null);
+      setAnnotateChecked(new Set());
+      setAnnotateSourceBody(null);
+      return;
+    }
     const chosen = annotatePlan.applied.filter((it) => annotateChecked.has(it));
     if (chosen.length === 0) {
       setAnnotatePlan(null);
+      setAnnotateSourceBody(null);
       return;
     }
     const newBody = applyAnnotations(currentDraft.body, chosen);
@@ -762,6 +776,7 @@ export default function WriterPage() {
     setProject(next);
     setAnnotatePlan(null);
     setAnnotateChecked(new Set());
+    setAnnotateSourceBody(null);
   }
 
   function handleSaveBody() {
@@ -1117,7 +1132,7 @@ export default function WriterPage() {
                         className="btn"
                         type="button"
                         onClick={handleAnnotateCitations}
-                        disabled={annotating}
+                        disabled={annotating || !!annotatePlan}
                         title="登録文献をもとに、本文を書き換えずに引用マーカーを差し込む候補を出します"
                       >
                         {annotating ? <span className="spinner" /> : null}
@@ -1210,7 +1225,15 @@ export default function WriterPage() {
                       >
                         選択を本文に反映（{annotateChecked.size}件）
                       </button>
-                      <button className="btn" type="button" onClick={() => setAnnotatePlan(null)}>
+                      <button
+                        className="btn"
+                        type="button"
+                        onClick={() => {
+                          setAnnotatePlan(null);
+                          setAnnotateChecked(new Set());
+                          setAnnotateSourceBody(null);
+                        }}
+                      >
                         キャンセル
                       </button>
                     </div>
