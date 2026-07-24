@@ -17,7 +17,7 @@ import {
 } from "./storage";
 import { getGenreConfig } from "./genreConfig";
 import type { DraftWorkflowResult } from "@/workflows/draft";
-import type { Chapter, Project, Section } from "./types";
+import type { Chapter, Project, Reference, Section } from "./types";
 
 /**
  * API に渡す project を軽量化する（翻訳書モードのみ）。
@@ -73,6 +73,20 @@ export function slimProjectForDraft(project: Project, keepSectionId: string): Pr
       bodyHistory: undefined,
     })),
   };
+}
+
+export async function annotateSectionCitations(
+  body: string,
+  references: Reference[],
+  field?: string,
+  researchQuestion?: string,
+): Promise<import("./citationAnnotate").CitationProposal[]> {
+  const r = await postJson<{ proposals?: import("./citationAnnotate").CitationProposal[] }>(
+    "/api/annotate-citations",
+    { body, references, field: field ?? "", researchQuestion: researchQuestion ?? "" },
+  );
+  if (!r.ok) throw new Error(r.error ?? "引用候補の生成に失敗しました。");
+  return r.data?.proposals ?? [];
 }
 
 /**
