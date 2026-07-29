@@ -36,6 +36,13 @@ export function ProjectSwitcher(): JSX.Element {
     refresh();
   }, []);
 
+  // メニューを開くたびに一覧を最新化する。ProjectSwitcher は永続レイアウト内に居て
+  // クライアント遷移では再マウントされないため、マウント時キャッシュのままだと
+  // 新規作成・インポート・別タブでの変更後に一覧が古くなる（例: 直近作成した節/脚本が出ない）。
+  useEffect(() => {
+    if (open) refresh();
+  }, [open]);
+
   function refresh() {
     setProjects(listProjects());
     try {
