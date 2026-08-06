@@ -154,6 +154,8 @@ export type Project = {
   sectionAgentReportsPrev?: Record<string, AgentReportSummary[]>;
   /** 「対応不要」にした指摘の安定ID（節key|agent|message|loc）。トリアージで除外される */
   dismissedFindings?: string[];
+  /** 「解決済み」にした指摘の安定ID（節key|agent|message|loc）。open から除外される。dismissed とは別枠 */
+  resolvedFindings?: string[];
 };
 
 export type ReviewResult = {

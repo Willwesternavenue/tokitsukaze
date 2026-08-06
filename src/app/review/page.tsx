@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { loadProject, setFindingDismissed } from "@/lib/storage";
+import { loadProject, setFindingDismissed, setFindingResolved } from "@/lib/storage";
 import { getGenreConfig } from "@/lib/genreConfig";
 import { agentLabel } from "@/lib/staffRegistry";
 import type { AgentFinding, AgentReportSummary, Project } from "@/lib/types";
@@ -167,9 +167,17 @@ export default function ReviewPage() {
     () => new Set(project?.dismissedFindings ?? []),
     [project],
   );
+  const resolvedSet = useMemo(
+    () => new Set(project?.resolvedFindings ?? []),
+    [project],
+  );
   const activeFindings = useMemo(
-    () => flatFindings.filter((f) => !dismissedSet.has(f.id)),
-    [flatFindings, dismissedSet],
+    () => flatFindings.filter((f) => !dismissedSet.has(f.id) && !resolvedSet.has(f.id)),
+    [flatFindings, dismissedSet, resolvedSet],
+  );
+  const resolvedList = useMemo(
+    () => flatFindings.filter((f) => resolvedSet.has(f.id)),
+    [flatFindings, resolvedSet],
   );
   const dismissedFindings = useMemo(
     () => flatFindings.filter((f) => dismissedSet.has(f.id)),
@@ -185,6 +193,10 @@ export default function ReviewPage() {
 
   function dismiss(id: string, on: boolean) {
     setProject(setFindingDismissed(id, on));
+  }
+
+  function resolve(id: string, on: boolean) {
+    setProject(setFindingResolved(id, on));
   }
 
   if (!project) {
@@ -378,6 +390,14 @@ export default function ReviewPage() {
                           </div>
                           <button
                             type="button"
+                            className="btn sm"
+                            title="解決済みにする（このカードを消す。AI判定の補助・上書き）"
+                            onClick={() => resolve(f.id, true)}
+                          >
+                            解決済み
+                          </button>
+                          <button
+                            type="button"
                             className="btn sm ghost"
                             title="この指摘を対応不要にする（トリアージから外す）"
                             onClick={() => dismiss(f.id, true)}
@@ -390,6 +410,27 @@ export default function ReviewPage() {
                   );
                 })()}
 
+                {resolvedList.length > 0 ? (
+                  <details className="dismissed-block" style={{ marginTop: 12 }}>
+                    <summary>解決済みの指摘（{resolvedList.length}）</summary>
+                    <ul className="list-block" style={{ marginTop: 8 }}>
+                      {resolvedList.map((f) => (
+                        <li key={f.id} className="triage-item" style={{ opacity: 0.7 }}>
+                          <span className="badge gray">{TIER_LABEL[f.tier]}</span>
+                          <div style={{ flex: 1 }}>
+                            <div className="finding-message">{f.message}</div>
+                            <div className="muted" style={{ fontSize: 11 }}>
+                              {f.agentLabel} ・ {f.chapterTitle} ／ {f.sectionTitle}
+                            </div>
+                          </div>
+                          <button type="button" className="btn sm" onClick={() => resolve(f.id, false)}>
+                            戻す
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                ) : null}
                 {dismissedFindings.length > 0 ? (
                   <details className="dismissed-block" style={{ marginTop: 12 }}>
                     <summary>無視した指摘（{dismissedFindings.length}）</summary>
