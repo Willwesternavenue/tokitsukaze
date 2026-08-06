@@ -430,11 +430,6 @@ textarea {
   .writer-shell {
     grid-template-columns: 1fr;
   }
-  .toc {
-    position: static;
-    max-height: none;
-    overflow-y: visible;
-  }
 }
 
 /* ===== Form ===== */
@@ -648,6 +643,13 @@ textarea.input {
   list-style: none;
   padding: 0;
   margin: 0;
+}
+@media (max-width: 980px) {
+  .toc {
+    position: static;
+    max-height: none;
+    overflow-y: visible;
+  }
 }
 .toc .chapter {
   margin-bottom: 8px;
