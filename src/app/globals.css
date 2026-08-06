@@ -79,6 +79,9 @@ textarea {
   align-items: center;
   height: 48px;
   box-shadow: var(--shadow);
+  position: sticky;
+  top: 0;
+  z-index: 30;
 }
 
 .topbar .brand {
@@ -232,7 +235,9 @@ textarea {
   gap: 4px;
   /* overflow-x: auto を使うと、絶対配置のドロップダウン (ナレッジ▾) が
      クリップされて見えなくなるため、折り返しで対応する */
-  position: relative;
+  position: sticky;
+  top: 48px; /* topbar の高さ分だけ下げて張り付く */
+  z-index: 20;
 }
 
 .nav a {
@@ -424,6 +429,11 @@ textarea {
 @media (max-width: 980px) {
   .writer-shell {
     grid-template-columns: 1fr;
+  }
+  .toc {
+    position: static;
+    max-height: none;
+    overflow-y: visible;
   }
 }
 
@@ -628,6 +638,13 @@ textarea.input {
 
 /* ===== Outline tree (writer) ===== */
 .toc {
+  /* 執筆画面: ヘッダー(topbar48+nav約40=約88px)の下に張り付き、章・小見出しだけを
+     独立して上下スクロールさせる。ページや右カラム（本文）は動かさない。 */
+  position: sticky;
+  top: 96px;
+  align-self: start;
+  max-height: calc(100vh - 104px);
+  overflow-y: auto;
   list-style: none;
   padding: 0;
   margin: 0;
