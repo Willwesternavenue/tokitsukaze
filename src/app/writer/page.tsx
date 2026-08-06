@@ -162,6 +162,7 @@ export default function WriterPage() {
   useEffect(() => {
     setEditingBody(false);
     setDiffBaseIdx(null);
+    setRegenInstruction("");
   }, [selected?.chapter.id, selected?.section.id]);
 
   const genreCfg = getGenreConfig(project?.genre);
