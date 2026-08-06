@@ -5,6 +5,7 @@ import Link from "next/link";
 import { loadProject, setFindingDismissed, setFindingResolved } from "@/lib/storage";
 import { getGenreConfig } from "@/lib/genreConfig";
 import { agentLabel } from "@/lib/staffRegistry";
+import { startSectionDraft, finishSectionDraft } from "@/lib/translationClient";
 import type { AgentFinding, AgentReportSummary, Project } from "@/lib/types";
 
 type Severity = "error" | "warning" | "info" | null;
@@ -57,6 +58,8 @@ type FlatFinding = {
   chapterTitle: string;
   sectionTitle: string;
   chapterNumber: number;
+  chapterId: string;
+  sectionId: string;
 };
 
 export default function ReviewPage() {
@@ -64,6 +67,7 @@ export default function ReviewPage() {
   const [activeTab, setActiveTab] = useState<string>("summary");
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [triageFilter, setTriageFilter] = useState<Tier | "all">("all");
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
 
   useEffect(() => {
     setProject(loadProject());
@@ -139,6 +143,7 @@ export default function ReviewPage() {
   const flatFindings: FlatFinding[] = useMemo(() => {
     const out: FlatFinding[] = [];
     for (const s of sections) {
+      const [chapterId, sectionId] = s.key.split("::");
       for (const r of s.reports) {
         for (const f of r.findings) {
           out.push({
@@ -150,6 +155,8 @@ export default function ReviewPage() {
             chapterTitle: s.chapterTitle,
             sectionTitle: s.sectionTitle,
             chapterNumber: s.chapterNumber,
+            chapterId,
+            sectionId,
           });
         }
       }
@@ -197,6 +204,32 @@ export default function ReviewPage() {
 
   function resolve(id: string, on: boolean) {
     setProject(setFindingResolved(id, on));
+  }
+
+  // 「解決する」: その指摘を指示にして該当節を再生成し、再レビュー結果で解決を判定させる
+  async function resolveByRegen(f: FlatFinding) {
+    if (!project || resolvingId) return;
+    const outline = project.selectedOutline;
+    const chapter = outline?.chapters.find((c) => c.id === f.chapterId);
+    const section = chapter?.sections.find((s) => s.id === f.sectionId);
+    if (!chapter || !section) {
+      alert("対象の節が見つかりませんでした（構成が変更された可能性）。");
+      return;
+    }
+    setResolvingId(f.id);
+    try {
+      const instruction = `次のレビュー指摘に対応して、この節の本文を直してください：「${f.message}」${
+        f.loc ? `（該当箇所: ${f.loc}）` : ""
+      }`;
+      const runId = await startSectionDraft(project, chapter, section, instruction);
+      const next = await finishSectionDraft(runId);
+      setProject(next);
+      // 再レビュー結果は next に反映済み。指摘が再度出なければ activeFindings から自然に消える。
+    } catch (e) {
+      alert("解決（再生成）に失敗しました：" + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setResolvingId(null);
+    }
   }
 
   if (!project) {
@@ -388,6 +421,16 @@ export default function ReviewPage() {
                               {f.loc ? <span>　「{f.loc}」</span> : null}
                             </div>
                           </div>
+                          <button
+                            type="button"
+                            className="btn sm primary"
+                            title="この指摘を指示にして該当節を再生成し、AIの再レビューで解決を判定します"
+                            disabled={!!resolvingId}
+                            onClick={() => resolveByRegen(f)}
+                          >
+                            {resolvingId === f.id ? <span className="spinner" /> : null}
+                            解決する
+                          </button>
                           <button
                             type="button"
                             className="btn sm"
