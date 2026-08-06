@@ -106,6 +106,9 @@ function mergeDefaults(p: Project): Project {
     dismissedFindings: Array.isArray((p as any).dismissedFindings)
       ? (p as any).dismissedFindings
       : [],
+    resolvedFindings: Array.isArray((p as any).resolvedFindings)
+      ? (p as any).resolvedFindings
+      : [],
     references: Array.isArray((p as any).references) ? (p as any).references : [],
     glossary: Array.isArray((p as any).glossary) ? (p as any).glossary : [],
     screenplayMeta: (p as any).screenplayMeta ?? undefined,
@@ -516,6 +519,16 @@ export function setFindingDismissed(id: string, dismissed: boolean): Project {
     if (dismissed) set.add(id);
     else set.delete(id);
     return { ...p, dismissedFindings: [...set] };
+  });
+}
+
+/** 指摘の「解決済み」を切り替える。id は安定ID（節key|agent|message|loc）。dismissed とは別枠 */
+export function setFindingResolved(id: string, resolved: boolean): Project {
+  return updateProject((p) => {
+    const set = new Set(p.resolvedFindings ?? []);
+    if (resolved) set.add(id);
+    else set.delete(id);
+    return { ...p, resolvedFindings: [...set] };
   });
 }
 

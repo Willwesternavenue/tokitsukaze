@@ -97,6 +97,7 @@ export async function startSectionDraft(
   baseProject: Project,
   chapter: Chapter,
   section: Section,
+  instruction?: string,
 ): Promise<string> {
   const prompts = loadPrompts();
   const base = prompts.find(
@@ -109,6 +110,7 @@ export async function startSectionDraft(
     section,
     promptTemplate,
     referenceWorks: getSelectedReferenceWorks(baseProject),
+    instruction,
   });
   if (!r.ok) throw new Error(r.error ?? "生成の開始に失敗しました。");
   const runId = r.data?.runId;

@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { loadProject, setFindingDismissed } from "@/lib/storage";
+import { loadProject, setFindingDismissed, setFindingResolved } from "@/lib/storage";
 import { getGenreConfig } from "@/lib/genreConfig";
 import { agentLabel } from "@/lib/staffRegistry";
+import { startSectionDraft, finishSectionDraft } from "@/lib/translationClient";
 import type { AgentFinding, AgentReportSummary, Project } from "@/lib/types";
 
 type Severity = "error" | "warning" | "info" | null;
@@ -57,6 +58,8 @@ type FlatFinding = {
   chapterTitle: string;
   sectionTitle: string;
   chapterNumber: number;
+  chapterId: string;
+  sectionId: string;
 };
 
 export default function ReviewPage() {
@@ -64,6 +67,7 @@ export default function ReviewPage() {
   const [activeTab, setActiveTab] = useState<string>("summary");
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [triageFilter, setTriageFilter] = useState<Tier | "all">("all");
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
 
   useEffect(() => {
     setProject(loadProject());
@@ -139,6 +143,7 @@ export default function ReviewPage() {
   const flatFindings: FlatFinding[] = useMemo(() => {
     const out: FlatFinding[] = [];
     for (const s of sections) {
+      const [chapterId, sectionId] = s.key.split("::");
       for (const r of s.reports) {
         for (const f of r.findings) {
           out.push({
@@ -150,6 +155,8 @@ export default function ReviewPage() {
             chapterTitle: s.chapterTitle,
             sectionTitle: s.sectionTitle,
             chapterNumber: s.chapterNumber,
+            chapterId,
+            sectionId,
           });
         }
       }
@@ -167,9 +174,17 @@ export default function ReviewPage() {
     () => new Set(project?.dismissedFindings ?? []),
     [project],
   );
+  const resolvedSet = useMemo(
+    () => new Set(project?.resolvedFindings ?? []),
+    [project],
+  );
   const activeFindings = useMemo(
-    () => flatFindings.filter((f) => !dismissedSet.has(f.id)),
-    [flatFindings, dismissedSet],
+    () => flatFindings.filter((f) => !dismissedSet.has(f.id) && !resolvedSet.has(f.id)),
+    [flatFindings, dismissedSet, resolvedSet],
+  );
+  const resolvedList = useMemo(
+    () => flatFindings.filter((f) => resolvedSet.has(f.id)),
+    [flatFindings, resolvedSet],
   );
   const dismissedFindings = useMemo(
     () => flatFindings.filter((f) => dismissedSet.has(f.id)),
@@ -185,6 +200,36 @@ export default function ReviewPage() {
 
   function dismiss(id: string, on: boolean) {
     setProject(setFindingDismissed(id, on));
+  }
+
+  function resolve(id: string, on: boolean) {
+    setProject(setFindingResolved(id, on));
+  }
+
+  // 「解決する」: その指摘を指示にして該当節を再生成し、再レビュー結果で解決を判定させる
+  async function resolveByRegen(f: FlatFinding) {
+    if (!project || resolvingId) return;
+    const outline = project.selectedOutline;
+    const chapter = outline?.chapters.find((c) => c.id === f.chapterId);
+    const section = chapter?.sections.find((s) => s.id === f.sectionId);
+    if (!chapter || !section) {
+      alert("対象の節が見つかりませんでした（構成が変更された可能性）。");
+      return;
+    }
+    setResolvingId(f.id);
+    try {
+      const instruction = `次のレビュー指摘に対応して、この節の本文を直してください：「${f.message}」${
+        f.loc ? `（該当箇所: ${f.loc}）` : ""
+      }`;
+      const runId = await startSectionDraft(project, chapter, section, instruction);
+      const next = await finishSectionDraft(runId);
+      setProject(next);
+      // 再レビュー結果は next に反映済み。指摘が再度出なければ activeFindings から自然に消える。
+    } catch (e) {
+      alert("解決（再生成）に失敗しました：" + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setResolvingId(null);
+    }
   }
 
   if (!project) {
@@ -378,6 +423,24 @@ export default function ReviewPage() {
                           </div>
                           <button
                             type="button"
+                            className="btn sm primary"
+                            title="この指摘を指示にして該当節を再生成し、AIの再レビューで解決を判定します"
+                            disabled={!!resolvingId}
+                            onClick={() => resolveByRegen(f)}
+                          >
+                            {resolvingId === f.id ? <span className="spinner" /> : null}
+                            解決する
+                          </button>
+                          <button
+                            type="button"
+                            className="btn sm"
+                            title="解決済みにする（このカードを消す。AI判定の補助・上書き）"
+                            onClick={() => resolve(f.id, true)}
+                          >
+                            解決済み
+                          </button>
+                          <button
+                            type="button"
                             className="btn sm ghost"
                             title="この指摘を対応不要にする（トリアージから外す）"
                             onClick={() => dismiss(f.id, true)}
@@ -390,6 +453,27 @@ export default function ReviewPage() {
                   );
                 })()}
 
+                {resolvedList.length > 0 ? (
+                  <details className="dismissed-block" style={{ marginTop: 12 }}>
+                    <summary>解決済みの指摘（{resolvedList.length}）</summary>
+                    <ul className="list-block" style={{ marginTop: 8 }}>
+                      {resolvedList.map((f) => (
+                        <li key={f.id} className="triage-item" style={{ opacity: 0.7 }}>
+                          <span className="badge gray">{TIER_LABEL[f.tier]}</span>
+                          <div style={{ flex: 1 }}>
+                            <div className="finding-message">{f.message}</div>
+                            <div className="muted" style={{ fontSize: 11 }}>
+                              {f.agentLabel} ・ {f.chapterTitle} ／ {f.sectionTitle}
+                            </div>
+                          </div>
+                          <button type="button" className="btn sm" onClick={() => resolve(f.id, false)}>
+                            戻す
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                ) : null}
                 {dismissedFindings.length > 0 ? (
                   <details className="dismissed-block" style={{ marginTop: 12 }}>
                     <summary>無視した指摘（{dismissedFindings.length}）</summary>

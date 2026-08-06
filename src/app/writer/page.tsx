@@ -88,6 +88,7 @@ export default function WriterPage() {
   const [trView, setTrView] = useState<TranslationView>("bilingual");
   const [editingBody, setEditingBody] = useState(false);
   const [bodyDraft, setBodyDraft] = useState("");
+  const [regenInstruction, setRegenInstruction] = useState("");
   const bodyTextareaRef = useRef<HTMLTextAreaElement>(null);
   const citePickerRef = useRef<HTMLDivElement>(null);
   const pendingCaretRef = useRef<number | null>(null);
@@ -161,6 +162,7 @@ export default function WriterPage() {
   useEffect(() => {
     setEditingBody(false);
     setDiffBaseIdx(null);
+    setRegenInstruction("");
   }, [selected?.chapter.id, selected?.section.id]);
 
   const genreCfg = getGenreConfig(project?.genre);
@@ -315,7 +317,11 @@ export default function WriterPage() {
     const { chapter, section } = selected;
     try {
       // 開始→runId保存（タブを閉じても復帰で回収できる）→完了までポーリング→適用
-      const runId = await startSectionDraft(project, chapter, section);
+      // 再生成（force）かつ非翻訳のときだけ指示欄を反映する（初回生成・翻訳には無関係）
+      const instruction =
+        force && !isTranslation ? regenInstruction.trim() || undefined : undefined;
+      const runId = await startSectionDraft(project, chapter, section, instruction);
+      if (instruction) setRegenInstruction("");
       setPendingRun({
         projectId: project.id,
         chapterId: chapter.id,
@@ -1096,6 +1102,18 @@ export default function WriterPage() {
                     >
                       {editingHeading ? "編集を閉じる" : "小見出しを編集"}
                     </button>
+                    {currentDraft && !isTranslation && !editingBody ? (
+                      <input
+                        className="input"
+                        type="text"
+                        value={regenInstruction}
+                        onChange={(e) => setRegenInstruction(e.target.value)}
+                        placeholder="再生成の指示（例: もっと具体例を / 説明を短く）"
+                        disabled={loading || batch?.running}
+                        style={{ flex: 1, minWidth: 220 }}
+                        title="指示を書いて「本文を再生成」を押すと、その指示を反映して作り直します（空なら従来どおり）"
+                      />
+                    ) : null}
                     {currentDraft ? (
                       <button
                         className="btn"

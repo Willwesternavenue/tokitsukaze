@@ -51,6 +51,8 @@ export type DraftWorkflowInput = {
   promptTemplate?: PromptTemplate;
   /** 参照ライブラリで選択された作品カルテ（クライアントから渡す。空なら参照エージェントは走らない） */
   referenceWorks?: ReferenceWork[];
+  /** 再生成時の編集者指示（A の指示欄／レビューの「解決する」）。空/未指定なら従来どおり */
+  instruction?: string;
 };
 
 export type DraftWorkflowResult = {
@@ -220,10 +222,14 @@ async function draftStep(
     project.genre === "paper"
       ? ""
       : buildReferenceContext(input.referenceWorks ?? [], project.genre);
+  const instructionBlock = input.instruction?.trim()
+    ? `\n\n【この節への修正指示】\n${input.instruction.trim()}\n上記の指示を最優先で反映して本文を書き直すこと（指示に関係しない箇所は保持）。`
+    : "";
   const systemPromptFinal =
     tpl.systemPrompt +
     (genreContext ? `\n\n${genreContext}` : "") +
-    (refContext ? `\n\n${refContext}` : "");
+    (refContext ? `\n\n${refContext}` : "") +
+    instructionBlock;
 
   const formatNote = `\n\n出力は次のJSON形式（余計な文字は禁止）：\n${tpl.outputFormat}`;
 
