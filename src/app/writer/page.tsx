@@ -1082,8 +1082,8 @@ export default function WriterPage() {
           ) : (
             <>
               <div className="panel">
-                <div className="panel-header">
-                  <div>
+                <div className="panel-header section-head">
+                  <div className="section-head-title">
                     <div className="muted" style={{ fontSize: 11 }}>
                       第{selected.chapter.chapterNumber}章　{selected.chapter.title}
                     </div>

@@ -426,6 +426,11 @@ textarea {
   grid-template-columns: 340px 1fr;
   gap: 16px;
 }
+/* グリッド子要素の min-width:auto を切る。これがないと本文カラムの
+   ボタン列（nowrap）の min-content 幅にカラムが引き伸ばされ、はみ出す。 */
+.writer-shell > * {
+  min-width: 0;
+}
 @media (max-width: 980px) {
   .writer-shell {
     grid-template-columns: 1fr;
@@ -895,6 +900,26 @@ textarea.input {
 .row-actions {
   display: flex;
   gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* 執筆画面・本文カラムのヘッダー。ボタンが多く nowrap なので、
+   横並びにすると見出しが 1 文字ずつ折り返されるまで潰れる。
+   見出しを上、操作列を下に積んで、操作列は折り返す。 */
+.section-head {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+.section-head .section-head-title {
+  min-width: 0;
+}
+.section-head .section-head-title h2 {
+  overflow-wrap: anywhere;
+}
+.section-head .row-actions {
+  align-items: center;
+  row-gap: 8px;
 }
 
 hr.sep {
