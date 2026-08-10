@@ -26,8 +26,19 @@ function resolveDbUrl(): string | undefined {
 function buildDb() {
   const url = resolveDbUrl();
   if (!url) return null;
-  const sql = neon(url);
-  return drizzle(sql, { schema });
+  // neon() は接続文字列が不正だと同期的に throw する。
+  // 設計意図は「DB があれば使う、無ければ/壊れていれば localStorage で継続」なので、
+  // 構築失敗は握り潰して null を返し、生成フロー全体を巻き込まない。
+  try {
+    const sql = neon(url);
+    return drizzle(sql, { schema });
+  } catch (e) {
+    console.warn(
+      "[db] 接続文字列が不正なため DB を無効化して継続します:",
+      e instanceof Error ? e.message : String(e),
+    );
+    return null;
+  }
 }
 
 export function getDb() {
