@@ -14,6 +14,7 @@ import {
   applyCitationAnnotationsSave,
   saveManualBodyEdit,
   saveSectionAgentReports,
+  saveSectionStoryboard,
   setPendingRun,
   setSectionLocked,
   updateSectionInOutline,
@@ -45,6 +46,7 @@ import {
   startSectionDraft,
 } from "@/lib/translationClient";
 import { buildFountain, measureRuntime } from "@/lib/screenplay";
+import { requestStoryboard } from "@/lib/storyboardClient";
 import { saveAs } from "file-saver";
 
 type Selected = { chapter: Chapter; section: Section } | null;
@@ -107,6 +109,9 @@ export default function WriterPage() {
   // 生成の復帰（タブ切替・移動・リロード対策）: 進行中/復帰中の runId を追跡
   const activePollsRef = useRef<Set<string>>(new Set());
   const [resumingKeys, setResumingKeys] = useState<string[]>([]);
+  // 脚本モード: 絵コンテ生成（生成中の sectionId / 節ごとのエラー）
+  const [sbBusy, setSbBusy] = useState<string | null>(null);
+  const [sbError, setSbError] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const p = loadProject();
@@ -800,6 +805,22 @@ export default function WriterPage() {
     setCitePickerOpen(false);
   }
 
+  // 脚本モード: 現在の節の本文から絵コンテ画像を生成し、保存して反映する
+  async function handleStoryboard(chapterId: string, sectionId: string) {
+    if (!project) return;
+    setSbBusy(sectionId);
+    setSbError((m) => ({ ...m, [sectionId]: "" }));
+    try {
+      const sb = await requestStoryboard(project, chapterId, sectionId);
+      const next = saveSectionStoryboard(chapterId, sectionId, sb);
+      setProject(next);
+    } catch (e) {
+      setSbError((m) => ({ ...m, [sectionId]: e instanceof Error ? e.message : String(e) }));
+    } finally {
+      setSbBusy(null);
+    }
+  }
+
   async function handleExportBilingual() {
     if (!project) return;
     setExporting(true);
@@ -1176,6 +1197,48 @@ export default function WriterPage() {
                     </button>
                   </div>
                 </div>
+                {isScreenplay && currentDraft ? (
+                  <div
+                    className="panel-body"
+                    style={{ borderBottom: "1px solid var(--border)", background: "var(--panel-alt)" }}
+                  >
+                    <div className="flex" style={{ alignItems: "center", gap: 8 }}>
+                      <span className="field-label" style={{ margin: 0 }}>絵コンテ</span>
+                      <button
+                        className="btn"
+                        type="button"
+                        onClick={() => handleStoryboard(selected.chapter.id, selected.section.id)}
+                        disabled={sbBusy === selected.section.id}
+                      >
+                        {sbBusy === selected.section.id ? <span className="spinner" /> : null}
+                        {sbBusy === selected.section.id
+                          ? "生成中…"
+                          : currentDraft.storyboard
+                            ? "絵コンテを再生成"
+                            : "絵コンテ生成"}
+                      </button>
+                    </div>
+                    {sbError[selected.section.id] ? (
+                      <div className="alert" style={{ marginTop: 8 }}>
+                        {sbError[selected.section.id]}
+                      </div>
+                    ) : null}
+                    {currentDraft.storyboard ? (
+                      <a
+                        href={currentDraft.storyboard.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ display: "inline-block", marginTop: 8 }}
+                      >
+                        <img
+                          src={currentDraft.storyboard.url}
+                          alt="絵コンテ"
+                          style={{ maxWidth: 320, borderRadius: 8, display: "block" }}
+                        />
+                      </a>
+                    ) : null}
+                  </div>
+                ) : null}
                 {annotatePlan ? (
                   <div
                     className="panel-body"

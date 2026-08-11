@@ -691,6 +691,21 @@ export function replaceDraftBody(
   }));
 }
 
+export function saveSectionStoryboard(
+  chapterId: string,
+  sectionId: string,
+  storyboard: import("./types").Storyboard,
+): Project {
+  return updateProject((p) => ({
+    ...p,
+    generatedSections: p.generatedSections.map((d) =>
+      d.chapterId === chapterId && d.sectionId === sectionId
+        ? { ...d, storyboard }
+        : d,
+    ),
+  }));
+}
+
 /**
  * AI引用差し込みの反映を保存する（論文モード）。
  * - 旧本文を必ず1版 bodyHistory に退避（圧縮しない＝「変更差分」から retrofit 前へ復元できる）。
