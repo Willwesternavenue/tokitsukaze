@@ -44,7 +44,7 @@ export async function POST(req: Request) {
   const present = section?.sceneMeta?.presentCharacters ?? [];
   const characters: ReferenceCharacterCard[] = (referenceWorks ?? [])
     .flatMap((w) => w.characters ?? [])
-    .filter((c) => (present.length ? present.includes(c.name) : true));
+    .filter((c) => present.includes(c.name));
 
   const prompt = buildStoryboardPrompt({
     sceneTitle: section?.title,

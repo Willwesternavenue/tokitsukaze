@@ -29,7 +29,7 @@ function describeCharacters(input: StoryboardPromptInput): string {
   const cards = input.characters ?? [];
   const picked = present.length
     ? cards.filter((c) => present.includes(c.name))
-    : cards;
+    : [];
   if (picked.length === 0) return "";
   const lines = picked.map((c) => {
     const facts = (c.facts ?? []).filter(Boolean).join("、");

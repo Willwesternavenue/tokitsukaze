@@ -56,4 +56,10 @@ describe("buildStoryboardPrompt", () => {
     // 上限 600 + 余白程度に収まる（本文まるごとは載らない）
     expect(p.length).toBeLessThan(1500);
   });
+
+  it("presentCharacters が空なら characters を注入しない", () => {
+    const metaNoPresent = { ...meta, presentCharacters: [] };
+    const p = buildStoryboardPrompt({ sceneMeta: metaNoPresent, body, characters: chars });
+    expect(p).not.toContain("黒髪のショートヘア");
+  });
 });
