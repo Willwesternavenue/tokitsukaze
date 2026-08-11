@@ -29,6 +29,13 @@ export type OutlineProposal = {
   chapters: Chapter[];
 };
 
+export type Storyboard = {
+  url: string;         // Vercel Blob の公開URL
+  prompt: string;      // 生成に使ったプロンプト
+  model: string;       // 例: "gemini-3.1-flash-image"
+  generatedAt: string; // ISO
+};
+
 export type SectionDraft = {
   id: string;
   chapterId: string;
@@ -50,6 +57,7 @@ export type SectionDraft = {
   bodyEditedAt?: string;
   /** 翻訳書モード: 過去の訳文（再生成・手動編集の前に退避。Diff比較の材料。最大10版） */
   bodyHistory?: BodyVersion[];
+  storyboard?: Storyboard;
 };
 
 /** 訳文（本文）の過去バージョン。GitHub風Diffの比較元になる */
