@@ -20,4 +20,10 @@ describe("extractInlineImage", () => {
   it("画像が無ければ throw", () => {
     expect(() => extractInlineImage({ candidates: [{ content: { parts: [{ text: "no image" }] } }] })).toThrow();
   });
+
+  it("parts が配列でなければ throw", () => {
+    expect(() => extractInlineImage({ candidates: [{ content: { parts: "oops" } }] })).toThrow(
+      "画像データが応答に含まれていませんでした",
+    );
+  });
 });

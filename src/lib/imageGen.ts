@@ -5,8 +5,9 @@ const DEFAULT_MODEL = "gemini-3.1-flash-image";
 type InlineData = { data?: string; mimeType?: string; mime_type?: string };
 
 export function extractInlineImage(json: unknown): { bytes: Buffer; mime: string } {
-  const parts =
+  let parts =
     (json as any)?.candidates?.[0]?.content?.parts ?? [];
+  if (!Array.isArray(parts)) parts = [];
   for (const p of parts) {
     const inline: InlineData | undefined = p?.inlineData ?? p?.inline_data;
     if (inline?.data) {
@@ -27,10 +28,13 @@ export async function generateStoryboardImage(
   const model = process.env.GEMINI_IMAGE_MODEL || DEFAULT_MODEL;
 
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": key,
+      },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
         // 一部モデルは ["TEXT","IMAGE"] を要求する。IMAGE 単独で失敗する場合は切替える（下の注記参照）。
